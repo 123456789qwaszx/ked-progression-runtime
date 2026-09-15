@@ -4,6 +4,6 @@ namespace Ked.Progression
 {
     public interface IDialogueChoiceReplay
     {
-        void RestoreChoices(IReadOnlyList<int> choices);
+        void RestoreChoices(IReadOnlyList<DialogueChoiceRecord> choices);
     }
 }
