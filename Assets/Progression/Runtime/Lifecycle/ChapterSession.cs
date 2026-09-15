@@ -126,8 +126,9 @@ namespace Ked.Progression
         // 현재 Scene을 닫지 않고 Scene root부터 다시 진행한다.
         // Rollback/Backlog jump가 Presentation 쪽 표적을 정리한 뒤 호출하는 progression 동작이다.
         //
-        // replay는 정상 Scene 종료가 아니므로 Scene/Chapter boundary를 닫거나 다시 열지 않는다.
-        public void Replay(int rollbackAnchor)
+        // replay는 정상 Scene 종료가 아니므로 Scene/Chapter boundary는 닫거나 다시 열지 않는다.
+        // 다만 root Episode의 실제 재생은 다시 시작되므로 Episode Enter만 다시 연다.
+        public async Task ReplayAsync(int rollbackAnchor)
         {
             RequireRunning();
 
@@ -136,6 +137,9 @@ namespace Ked.Progression
 
             Scene.RewindAfter(rollbackAnchor);
             Scene.RestartReplay();
+
+            await _boundaries.Episode.EnterAsync(
+                new EpisodeEnterContext(Scene, Scene.CurrentEpisode));
         }
 
         private async Task EnterSceneAsync(ProgressionState entryState)
