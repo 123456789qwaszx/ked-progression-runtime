@@ -86,7 +86,92 @@ namespace Ked.Progression
                 });
 
             PathCursor = _picks.Count;
+        }
 
+        public void DiscardUnconsumedChoices()
+        {
+            if (!HasRecordedChoice)
+                return;
+            
+            _picks.RemoveRange(
+                PathCursor,
+                _picks.Count - PathCursor);
+        }
+
+        // Anchor 10 : choice A
+        // Anchor 20 : choice B
+        // Anchor 30 : choice C
+        // 에서 사용자가 history 20으로 rollback했다면:
+        //
+        // Anchor > 20 인 C를 지움.
+        // 그 이후에 고른 선택 + 그 이후에 시청했다고 pending 처리한 Episode 모두 삭제.
+        public void RewindAfter(int historyIndex)
+        {
+            for (int i = _picks.Count - 1; i >= 0; i--)
+            {
+                if (_picks[i].Anchor > historyIndex)
+                    _picks.RemoveAt(i);
+            }
+
+            for (int i = _watched.Count - 1; i >= 0; i--)
+            {
+                if (_watched[i].Anchor > historyIndex)
+                    _watched.RemoveAt(i);
+            }
+
+            if (PathCursor > _picks.Count)
+                PathCursor = _picks.Count;
+        }
+
+        public void RestartReplay()
+        {
+            PathCursor = 0;
+        }
+        
+        public void ClearChoices()
+        {
+            _picks.Clear();
+            PathCursor = 0;
+        }
+        
+        
+        public void NoteWatched(EpisodeNode episode, int anchor)
+        {
+            if (string.IsNullOrEmpty(episode.EventKey))
+                return;
+
+            for (int i = 0; i < _watched.Count; i++)
+            {
+                if (string.Equals(
+                        _watched[i].EpisodeId, episode.EpisodeId, StringComparison.Ordinal))
+                    return;
+            }
+
+            _watched.Add(
+                new WatchedEpisode
+                {
+                    EpisodeId = episode.EpisodeId,
+                    Anchor = anchor,
+                });
+        }
+
+        // 현재 실행이 실제로 지나온 경로
+        public IReadOnlyList<EpisodeOption> PendingOptions()
+        {
+            _foldBuffer.Clear();
+
+            for (int i = 0; i < PathCursor; i++)
+                _foldBuffer.Add(_picks[i].Option);
+
+            return _foldBuffer;
+        }
+
+        // Scene pending 상태와 ProgressionState의 접점.
+        public ProgressionState FoldInto(
+            ChapterProgression chapter, 
+            ProgressionState entryState)
+        {
+            return entryState.FoldChoices(chapter, PendingOptions());
         }
     }
 }
