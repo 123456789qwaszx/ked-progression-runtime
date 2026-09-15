@@ -6,7 +6,7 @@ namespace Ked.Progression
         SceneEntering = 1,
         SceneEntered = 2,
         EntryReported = 3,
-        LoadPlanApplied = 4,
+        RestorePathApplied = 4,
         EpisodePlaying = 5,
         EpisodeCompleted = 6,
         ChoiceResolving = 7,
