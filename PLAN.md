@@ -56,15 +56,15 @@ README에 현재 조사 결과를 고정한다.
 
 ```text
 NormalSceneTransition_CommitsScene                 [기존 테스트로 부분 검증]
-ChapterEnd_CommitsFinalScene                       [기존 테스트로 부분 검증]
+ChapterEnd_CommitsFinalScene                       [완료]
 Rollback_DoesNotCommitScene                        [검증 추가]
 Rollback_KeepsSameScene                            [검증 추가]
 Rollback_DoesNotExitOrReenterScene                 [ChapterSession 검증 추가]
 Rollback_ReplaysFromSceneRoot                      [검증 추가]
 Rollback_RemovesFuturePendingChoices               [검증 추가]
 Rollback_RemovesFutureWatchedEvents                [미완료]
-Restore_EntersChapterWithRestoredState             [P3 경로에서 부분 검증, 명시 테스트 보강 필요]
-NewChapter_UsesInitialState                        [기존 코드 존재, 명시 테스트 보강 필요]
+Restore_EntersChapterWithRestoredState             [완료]
+NewChapter_UsesInitialState                        [완료]
 ```
 
 완료 조건:
@@ -221,59 +221,98 @@ RestorePath_requires_restored_chapter_state         [추가]
 
 # P4 — Chapter Boundary 상세화
 
-상태: **다음 작업**
+상태: **구현 완료 / Unity Test Runner 확인 필요**
 
-현재 `ChapterEntryKind.New / Restore`를 기준으로 실제 게임의 Chapter 경계 작업 순서를 고정한다.
+원본을 다시 확인한 결과 실제 진입 순서는 다음과 같다.
 
 ```text
-Chapter definition 확정
-→ initial/restored ProgressionState 결정
-→ chapter Yarn variables 초기화
-→ saved Yarn variables restore
-→ backlog restore/new-session reset
-→ first Scene 진입
+Chapter definition / initial-restored ProgressionState 결정
+→ Backlog restore 또는 null restore(clear)
+→ Chapter Yarn variables 초기화(BeginChapter)
+→ saved Yarn variables restore(있을 때만)
+→ first Scene 생성/진입
 ```
 
-주의:
+중요한 소유권 보정:
 
-- Backlog 전체 초기화는 Scenario/New Game 수명과 섞일 수 있으므로 원본을 다시 확인한 뒤 Chapter Boundary에 넣을지 결정한다.
-- P3에서 Scene restore path와 Presentation seek를 분리했으므로, P4에서는 Yarn variable/backlog 복원 순서와 first Scene enter의 선후관계만 다룬다.
+- `ProgressionState` 결정은 Chapter 진입 전에 끝난다.
+- `IChapterBoundary.EnterAsync`는 확정된 State를 받은 뒤 첫 Scene보다 먼저 완료되어야 한다.
+- 실제 Host의 Chapter boundary 구현은 `BeginChapter → saved Yarn variables restore` 순서를 담당한다.
+- Backlog는 원본에서 Chapter 실행보다 앞서 준비되지만 데이터 수명은 Scenario/회차다.
+- 따라서 Backlog clear/restore를 `IChapterBoundary` 책임으로 옮기지 않는다. P5에서 Scenario entry 책임으로 고정한다.
+- Chapter 종료는 마지막 Scene이 정상 commit/exit된 뒤에만 발생한다.
+
+현재 Runtime 구조는 새 API를 더 만들지 않아도 위 순서를 표현할 수 있었다. 따라서 P4는 불필요한 Yarn/Backlog 타입을 Core에 추가하지 않고 기존 boundary 위치를 명시하고 characterization test로 고정한다.
 
 테스트:
 
 ```text
-NewChapter_UsesInitialState
-RestoreChapter_UsesRestoredState
-ChapterExit_HappensAfterFinalSceneCommit
+ChapterEnter_completes_before_first_scene_enters    [추가]
+NewChapter_UsesInitialState                         [추가]
+RestoreChapter_UsesRestoredState                    [추가]
+ChapterExit_HappensAfterFinalSceneCommit             [추가]
 ```
+
+`IChapterBoundary` 주석에도 다음 계약을 명시했다.
+
+```text
+State 확정
+→ Chapter Boundary Enter 완료
+→ first Scene Enter
+```
+
+Host mapping은 다음과 같다.
+
+```text
+IChapterBoundary.EnterAsync
+  BeginChapter
+  → Restore saved Yarn variables (Restore일 때)
+```
+
+현재 저장소에는 GitHub Actions Unity workflow가 없으므로 실제 Unity Test Runner compile/pass는 아직 확인하지 못했다.
 
 ---
 
-# P5 — Scenario Session
+# P5 — Scenario Session / 회차 진입
 
-상태: 대기
+상태: **다음 작업**
 
-예상 소유 데이터:
+P4 확인 결과 Backlog를 Chapter에 넣으면 수명이 잘못된다. P5는 먼저 Scenario 전체 기능을 한꺼번에 만들지 않고 **회차 진입과 Chapter 이전 준비 경계**부터 고정한다.
+
+우선 소유할 것:
+
+- New Game / Restore 진입 구분
+- Backlog session state
+- 현재 Chapter 선택/생성
+- ChapterSession 진입 이전 준비 순서
+
+후속으로 연결할 장기 데이터:
 
 - permanent stats
 - album
 - endings
-- backlog session state
-- current Chapter
 
-핵심 규칙:
-
-- Backlog는 Scene 수명이 아니다.
-- New Game에서 초기화한다.
-- Continue/Load에서는 저장된 backlog를 복원한다.
-- Chapter 전환 시 permanent state는 유지한다.
-
-테스트:
+핵심 순서:
 
 ```text
-NewGame_ClearsBacklog
-Resume_RestoresBacklog
-ChapterTransition_PreservesPermanentState
+Scenario/Playthrough entry 결정
+→ New Game이면 Backlog clear
+→ Continue/Load이면 saved Backlog restore
+→ Chapter와 initial/restored ProgressionState 결정
+→ ChapterSession.EnterAsync
+→ Chapter Boundary
+→ first Scene
+```
+
+단, 원본 `ProgressionLauncher`에서는 Chapter/State 결정이 Backlog restore보다 먼저 계산되어 있으므로 구현 시 데이터 계산 순서와 lifecycle 적용 순서를 구분해 확인한다.
+
+테스트 후보:
+
+```text
+NewGame_ClearsBacklogBeforeChapterEnter
+Resume_RestoresBacklogBeforeChapterEnter
+ScenarioEntry_StartsChapterAfterSessionPreparation
+ChapterTransition_PreservesScenarioState
 ChapterTransition_CreatesNewChapterState
 ```
 
@@ -499,18 +538,96 @@ P4에서 우선 원본의 실제 Chapter 진입 순서를 다시 확인한다.
 
 ```text
 Chapter state 결정
+→ Backlog restore/clear
 → Yarn chapter variable 초기화
 → saved Yarn variable restore
-→ backlog restore/new-session 처리
 → first Scene enter
 ```
 
-단, Backlog 초기화/복원 중 Scenario 수명에 속하는 부분은 P5로 남긴다.
+단, Backlog 자체는 Scenario 수명이므로 Chapter Boundary에 넣지 않는다.
+
+---
+
+# Checkpoint 4 — Chapter Boundary 상세화
+
+## Reference
+
+원본 `ProgressionLauncher`가 Chapter와 initial/restored `ProgressionState`를 먼저 결정한 뒤 `ProgressionDriver.Start()`에 전달한다.
+
+`ProgressionDriver.RunAsync()`에서는 Chapter loop 전에 `BacklogRecorder.Restore()`를 호출한다. `null`이면 기존 Backlog를 비우고, 저장된 항목이 있으면 복원한다.
+
+그 뒤 `RunChapterAsync()` 첫 반복에서 `SyncChapterVariables()`가 실행된다.
+
+```text
+_yarnBridge.BeginChapter(_yarnProject)
+→ restoreVariables가 있으면 _yarnBridge.Restore(...)
+→ SceneTransaction 생성
+→ SceneRunner.EnterSceneAsync(...)
+```
+
+따라서 실제 의미는 다음과 같다.
+
+```text
+Chapter/State 결정
+→ 회차 Backlog 준비
+→ Chapter Yarn 초기화
+→ saved Yarn 변수 복원
+→ first Scene 진입
+```
+
+Chapter 종료에서는 마지막 Scene의 `CommitScene()` 결과가 먼저 확정되고 Driver가 Chapter 종료 결과를 받은 뒤 실행을 끝낸다.
+
+## Implemented
+
+- `IChapterBoundary` 호출 위치를 Chapter State 확정 후 / first Scene 이전의 계약으로 명시
+- Host mapping을 `BeginChapter → optional saved variables restore`로 문서화
+- Backlog는 Chapter Boundary 책임이 아님을 코드 주석으로 고정
+- `ChapterEnter_completes_before_first_scene_enters` 추가
+- `NewChapter_UsesInitialState` 추가
+- `RestoreChapter_UsesRestoredState` 추가
+- `ChapterExit_HappensAfterFinalSceneCommit` 추가
+- Scene Exit boundary가 이미 commit된 Scene을 받는지 테스트에서 직접 검증
+
+## Parity
+
+Progression lifecycle 관점에서 원본과 일치한다.
+
+```text
+initial/restored State가 먼저 확정된다.
+Chapter Enter 준비가 끝나기 전에는 first Scene이 열리지 않는다.
+Restore State를 initial state로 덮어쓰지 않는다.
+마지막 Scene은 Chapter Exit 전에 commit된다.
+```
+
+Yarn/Backlog 구현 타입을 Runtime에 직접 넣지 않고도 필요한 lifecycle 순서를 보존했다.
+
+## Gap
+
+1. Backlog는 Scenario/회차 수명이므로 아직 Runtime 안에서 `Backlog 준비 → Chapter Enter` 순서를 직접 실행하거나 관찰할 상위 Session이 없다.
+2. 실제 `ProgressionYarnBridge.BeginChapter/Restore` adapter는 아직 `ked-presentation-runtime`에 재연결하지 않았다.
+3. Chapter 간 전환이 있는 Scenario lifecycle은 아직 없다.
+4. watched event rewind 결과의 public 관찰 계약은 여전히 남아 있다.
+5. GitHub Actions Unity workflow가 없어 추가 테스트의 실제 Unity Test Runner compile/pass는 확인하지 못했다.
+
+## Plan Update
+
+다음 작업은 **P5 — Scenario Session / 회차 진입**으로 변경한다.
+
+첫 구현 범위는 permanent stats/album/endings 전체가 아니라 다음 최소 경계다.
+
+```text
+New / Restore 회차 entry
+→ Backlog clear/restore 경계
+→ Chapter 선택 및 State 준비
+→ ChapterSession 진입
+```
+
+이 경계를 먼저 고정한 뒤 Chapter 전환 시 유지해야 하는 permanent state를 확장한다.
 
 ---
 
 # 바로 다음 작업
 
-**P4 — Chapter Boundary 상세화**
+**P5 — Scenario Session / 회차 진입**
 
-먼저 원본 `ProgressionLauncher` / `ProgressionDriver.SyncChapterVariables()` / Backlog restore 순서와 새 `ChapterSession.EnterAsync()`의 boundary 호출 순서를 대조한다.
+먼저 원본 `ProgressionLauncher.LaunchCoreAsync()` / `SaveCoordinator.PrepareNewPlaythroughAsync()` / `LoadActiveResumePoint()` / `BacklogRecorder.Restore()`를 대조해 New Game과 Continue/Manual Load에서 회차 준비 책임이 어디에 있는지 고정한다.
