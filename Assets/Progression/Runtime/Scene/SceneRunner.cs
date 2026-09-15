@@ -364,7 +364,7 @@ namespace Ked.Progression
             SceneTransaction scene,
             ScenePendingHistory history)
         {
-            SavedLoadPlan plan = scene.LoadPlan;
+            SceneLoadPlan plan = scene.LoadPlan;
 
             if (plan == null)
                 return;
@@ -379,7 +379,7 @@ namespace Ked.Progression
 
             for (int i = 0; i < plan.Path.Count; i++)
             {
-                SavedChoice step = plan.Path[i];
+                ScenePathStep step = plan.Path[i];
 
                 if (!TryResolveSavedChoice(
                         scene.Chapter,
@@ -417,7 +417,7 @@ namespace Ked.Progression
         private static bool TryResolveSavedChoice(
             ChapterProgression chapter,
             string cursor,
-            SavedChoice step,
+            ScenePathStep step,
             out EpisodeOption option)
         {
             option = null;
