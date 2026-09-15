@@ -8,9 +8,9 @@ namespace Ked.Progression.Tests
     public sealed class SceneRunnerTests
     {
         [Test]
-        public async Task RunAsync_AutoAdvanceAcrossScene_CommitsEntryScene()
+        public async Task RunAsync_ChoiceAcrossScene_CommitsEntryScene()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneAutoChapter();
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
             ProgressionState entry = chapter.CreateEntryState();
 
             var playback = new FakeScenePlayback();
@@ -46,7 +46,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task Driver_RunsScenesUntilChapterEnds()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneAutoChapter();
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
 
             var playback = new FakeScenePlayback();
             var reporter = new FakeProgressionReporter();
@@ -75,29 +75,27 @@ namespace Ked.Progression.Tests
 
     internal static class TestChapterFactory
     {
-        public static ChapterProgression CreateTwoSceneAutoChapter()
+        public static ChapterProgression CreateTwoSceneChapter()
         {
-            var toSecond = new EpisodeOption(
-                choiceLabel: string.Empty,
-                targetEpisodeId: "ep-2",
-                viaNodeId: string.Empty,
-                displayConditions: Array.Empty<ProgressionCondition>(),
-                enableConditions: Array.Empty<ProgressionCondition>(),
-                statChanges: Array.Empty<StatChange>());
+            EpisodeOption toSecond = EpisodeOption.Choice(
+                choiceLabel: "next",
+                targetEpisodeId: "ep-2");
 
             var first = new EpisodeNode(
                 episodeId: "ep-1",
-                sceneId: "scene-1",
+                title: "Episode 1",
                 dialogueEntryId: "node-1",
+                nextOptions: new[] { toSecond },
                 eventKey: string.Empty,
-                nextOptions: new[] { toSecond });
+                sceneId: "scene-1");
 
             var second = new EpisodeNode(
                 episodeId: "ep-2",
-                sceneId: "scene-2",
+                title: "Episode 2",
                 dialogueEntryId: "node-2",
+                nextOptions: Array.Empty<EpisodeOption>(),
                 eventKey: string.Empty,
-                nextOptions: Array.Empty<EpisodeOption>());
+                sceneId: "scene-2");
 
             return new ChapterProgression(
                 "chapter",
