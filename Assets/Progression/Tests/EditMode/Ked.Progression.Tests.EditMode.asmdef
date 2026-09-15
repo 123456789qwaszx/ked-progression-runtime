@@ -1,0 +1,15 @@
+{
+  "name": "Ked.Progression.Tests.EditMode",
+  "rootNamespace": "Ked.Progression.Tests",
+  "references": ["Ked.Progression.Runtime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "noEngineReferences": false
+}
