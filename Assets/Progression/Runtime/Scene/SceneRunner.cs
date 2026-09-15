@@ -249,6 +249,10 @@ namespace Ked.Progression
             _log.Info($"[진행] {description} 시작 — \"{nodeName}\"");
 
             await _playback.PlayNodeAsync(nodeName);
+
+            // Stop/New Game/Manual Load처럼 run 자체를 폐기하는 요청이
+            // playback 대기를 깨운 직후 정상 progression으로 이어지지 않게 한다.
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         private async Task<SceneChoiceResolution> ResolveNextChoiceAsync(
