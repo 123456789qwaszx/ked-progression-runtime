@@ -18,7 +18,7 @@ namespace Ked.Progression
 
         private ChapterProgression _chapter;
         private ProgressionState _state;
-        private SceneLoadPlan _loadPlan;
+        private IReadOnlyList<ScenePathStep> _restorePath;
 
         private SceneTransaction _currentScene;
         private CancellationTokenSource _runCancellation;
@@ -43,7 +43,7 @@ namespace Ked.Progression
         public void Start(
             ChapterProgression chapter,
             ProgressionState entryState,
-            SceneLoadPlan loadPlan = null)
+            IReadOnlyList<ScenePathStep> restorePath = null)
         {
             if (chapter == null)
                 throw new ArgumentNullException(nameof(chapter));
@@ -57,20 +57,20 @@ namespace Ked.Progression
                 return;
             }
 
-            _runTask = RunAsync(chapter, entryState, loadPlan);
+            _runTask = RunAsync(chapter, entryState, restorePath);
         }
 
         private async Task RunAsync(
             ChapterProgression chapter,
             ProgressionState entryState,
-            SceneLoadPlan loadPlan)
+            IReadOnlyList<ScenePathStep> restorePath)
         {
             var cancellation = new CancellationTokenSource();
 
             _runCancellation = cancellation;
             _chapter = chapter;
             _state = entryState;
-            _loadPlan = loadPlan;
+            _restorePath = restorePath;
 
             try
             {
@@ -94,7 +94,7 @@ namespace Ked.Progression
                 _currentScene = null;
                 _chapter = null;
                 _state = null;
-                _loadPlan = null;
+                _restorePath = null;
 
                 cancellation.Dispose();
             }
@@ -106,13 +106,13 @@ namespace Ked.Progression
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                SceneLoadPlan loadPlan = _loadPlan;
-                _loadPlan = null;
+                IReadOnlyList<ScenePathStep> restorePath = _restorePath;
+                _restorePath = null;
 
                 var scene = new SceneTransaction(
                     _chapter,
                     _state,
-                    loadPlan);
+                    restorePath);
 
                 _currentScene = scene;
 
