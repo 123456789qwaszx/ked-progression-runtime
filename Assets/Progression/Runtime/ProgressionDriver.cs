@@ -18,7 +18,7 @@ namespace Ked.Progression
 
         private ChapterProgression _chapter;
         private ProgressionState _state;
-        private SavedLoadPlan _loadPlan;
+        private SceneLoadPlan _loadPlan;
 
         private SceneTransaction _currentScene;
         private CancellationTokenSource _runCancellation;
@@ -43,7 +43,7 @@ namespace Ked.Progression
         public void Start(
             ChapterProgression chapter,
             ProgressionState entryState,
-            SavedLoadPlan loadPlan = null)
+            SceneLoadPlan loadPlan = null)
         {
             if (chapter == null)
                 throw new ArgumentNullException(nameof(chapter));
@@ -63,7 +63,7 @@ namespace Ked.Progression
         private async Task RunAsync(
             ChapterProgression chapter,
             ProgressionState entryState,
-            SavedLoadPlan loadPlan)
+            SceneLoadPlan loadPlan)
         {
             var cancellation = new CancellationTokenSource();
 
@@ -106,7 +106,7 @@ namespace Ked.Progression
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                SavedLoadPlan loadPlan = _loadPlan;
+                SceneLoadPlan loadPlan = _loadPlan;
                 _loadPlan = null;
 
                 var scene = new SceneTransaction(
