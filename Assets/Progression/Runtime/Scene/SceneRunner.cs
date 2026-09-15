@@ -57,7 +57,7 @@ namespace Ked.Progression
                 await EnterSceneAsync(scene, cancellationToken);
 
                 ApplyRestorePath(scene, history);
-                scene.SetPhase(SceneRunPhase.LoadPlanApplied);
+                scene.SetPhase(SceneRunPhase.RestorePathApplied);
 
                 while (true)
                 {
