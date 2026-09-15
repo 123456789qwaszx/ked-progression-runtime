@@ -44,6 +44,37 @@ namespace Ked.Progression.Tests
         }
 
         [Test]
+        public async Task RunAsync_LoadPlan_RestoresProgressionAndDialogueReplay()
+        {
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            var seek = new FakeSceneSeek();
+            var dialogue = new FakeDialogueChoiceReplay();
+
+            var plan = new SceneLoadPlan(
+                new[] { new ScenePathStep("ep-1", 0) },
+                new[] { new DialogueChoiceRecord(3, 0, 1, "line-option") },
+                new SceneLineTarget("node-1", "line-target", 0));
+
+            var runner = new SceneRunner(
+                new FakeScenePlayback(),
+                new FakeOptionsView(),
+                seek,
+                new FakeRollbackHistory(),
+                new FakeProgressionReporter(),
+                new FakeSceneBacklog(),
+                dialogue);
+
+            SceneRunResult result = await runner.RunAsync(
+                new SceneTransaction(chapter, chapter.CreateEntryState(), plan),
+                default);
+
+            Assert.That(result.Outcome, Is.EqualTo(SceneRunOutcome.SceneEnded));
+            Assert.That(dialogue.Restored.Count, Is.EqualTo(1));
+            Assert.That(dialogue.Restored[0].SelectedOptionLineId, Is.EqualTo("line-option"));
+            Assert.That(seek.BeginCount, Is.EqualTo(1));
+        }
+
+        [Test]
         public async Task Driver_RunsScenesUntilChapterEnds()
         {
             ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
@@ -135,9 +166,11 @@ namespace Ked.Progression.Tests
     internal sealed class FakeSceneSeek : ISceneSeek
     {
         public bool IsSeekingActive { get; private set; }
+        public int BeginCount { get; private set; }
 
         public void BeginLoadSeek(string nodeName, string lineId, int occurrence)
         {
+            BeginCount++;
             IsSeekingActive = true;
         }
 
@@ -192,8 +225,11 @@ namespace Ked.Progression.Tests
 
     internal sealed class FakeDialogueChoiceReplay : IDialogueChoiceReplay
     {
-        public void RestoreChoices(IReadOnlyList<int> choices)
+        public List<DialogueChoiceRecord> Restored { get; } = new();
+
+        public void RestoreChoices(IReadOnlyList<DialogueChoiceRecord> choices)
         {
+            Restored.AddRange(choices);
         }
     }
 
