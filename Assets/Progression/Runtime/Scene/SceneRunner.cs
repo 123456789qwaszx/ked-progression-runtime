@@ -130,6 +130,7 @@ namespace Ked.Progression
 
             _reporter.ReportSceneEntered(
                 scene.Chapter.ChapterId,
+                scene.RootEpisode.SceneId,
                 scene.EntryState);
 
             scene.SetPhase(SceneRunPhase.EntryReported);
@@ -147,6 +148,11 @@ namespace Ked.Progression
 
             scene.SetPhase(SceneRunPhase.EpisodePlaying);
 
+            _reporter.ReportEpisodeEntered(
+                scene.Chapter.ChapterId,
+                episode.SceneId,
+                episode);
+
             await PlayNodeAsync(
                 episode.DialogueEntryId,
                 "대사",
@@ -157,6 +163,12 @@ namespace Ked.Progression
 
             history.NoteWatched(episode, _rollbackHistory.LastHistoryIndex);
             scene.SetPhase(SceneRunPhase.EpisodeCompleted);
+
+            _reporter.ReportEpisodeExited(
+                scene.Chapter.ChapterId,
+                episode.SceneId,
+                episode);
+
             scene.SetPhase(SceneRunPhase.ChoiceResolving);
 
             SceneChoiceResolution resolution;
@@ -434,17 +446,25 @@ namespace Ked.Progression
             List<string> watched =
                 history.CreateWatchedEpisodeIds();
 
+            string sceneId = scene.RootEpisode.SceneId;
+
             _log.Info(
                 $"[장면] 확정 — 선택 {choices.Count}개, " +
                 $"시청 {watched.Count}개 → {state.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
                 scene.Chapter.ChapterId,
+                sceneId,
                 choices,
                 watched,
                 state);
 
             scene.SetPhase(SceneRunPhase.SceneCommitted);
+
+            _reporter.ReportSceneExited(
+                scene.Chapter.ChapterId,
+                sceneId,
+                state);
 
             return new SceneRunResult(outcome, state);
         }
