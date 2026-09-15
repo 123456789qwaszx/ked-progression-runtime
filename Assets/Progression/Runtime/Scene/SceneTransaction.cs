@@ -10,7 +10,7 @@ namespace Ked.Progression
         public string RootEpisodeId { get; }
         public string CurrentEpisodeId { get; private set; }
 
-        public SavedLoadPlan LoadPlan { get; }
+        public SceneLoadPlan LoadPlan { get; }
 
         public SceneRunPhase Phase { get; private set; } = SceneRunPhase.None;
         public bool ReplayPending { get; private set; }
@@ -26,7 +26,7 @@ namespace Ked.Progression
         public SceneTransaction(
             ChapterProgression chapter,
             ProgressionState entryState,
-            SavedLoadPlan loadPlan = null)
+            SceneLoadPlan loadPlan = null)
         {
             Chapter = chapter;
             EntryState = entryState;
