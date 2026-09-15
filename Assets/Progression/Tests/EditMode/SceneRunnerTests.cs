@@ -15,20 +15,18 @@ namespace Ked.Progression.Tests
 
             var playback = new FakeScenePlayback();
             var options = new FakeOptionsView();
-            var seek = new FakeSceneSeek();
+            var replayState = new FakeSceneReplayState();
             var rollback = new FakeRollbackHistory();
             var reporter = new FakeProgressionReporter();
             var backlog = new FakeSceneBacklog();
-            var dialogue = new FakeDialogueChoiceReplay();
 
             var runner = new SceneRunner(
                 playback,
                 options,
-                seek,
+                replayState,
                 rollback,
                 reporter,
-                backlog,
-                dialogue);
+                backlog);
 
             SceneRunResult result = await runner.RunAsync(
                 new SceneTransaction(chapter, entry),
@@ -44,34 +42,53 @@ namespace Ked.Progression.Tests
         }
 
         [Test]
-        public async Task RunAsync_LoadPlan_RestoresProgressionAndDialogueReplay()
+        public async Task RunAsync_RestorePath_StartsPresentationReplayAfterPathValidation()
         {
             ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
-            var seek = new FakeSceneSeek();
-            var dialogue = new FakeDialogueChoiceReplay();
-
-            var plan = new SceneLoadPlan(
-                new[] { new ScenePathStep("ep-1", 0) },
-                new[] { new DialogueChoiceRecord(3, 0, 1, "line-option") },
-                new SceneLineTarget("node-1", "line-target", 0));
+            var replayState = new FakeSceneReplayState();
 
             var runner = new SceneRunner(
                 new FakeScenePlayback(),
                 new FakeOptionsView(),
-                seek,
+                replayState,
                 new FakeRollbackHistory(),
                 new FakeProgressionReporter(),
-                new FakeSceneBacklog(),
-                dialogue);
+                new FakeSceneBacklog());
 
             SceneRunResult result = await runner.RunAsync(
-                new SceneTransaction(chapter, chapter.CreateEntryState(), plan),
+                new SceneTransaction(
+                    chapter,
+                    chapter.CreateEntryState(),
+                    new[] { new ScenePathStep("ep-1", 0) }),
                 default);
 
             Assert.That(result.Outcome, Is.EqualTo(SceneRunOutcome.SceneEnded));
-            Assert.That(dialogue.Restored.Count, Is.EqualTo(1));
-            Assert.That(dialogue.Restored[0].SelectedOptionLineId, Is.EqualTo("line-option"));
-            Assert.That(seek.BeginCount, Is.EqualTo(1));
+            Assert.That(replayState.BeginLoadReplayCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public async Task RunAsync_InvalidRestorePath_DoesNotStartPresentationReplay()
+        {
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            var replayState = new FakeSceneReplayState();
+
+            var runner = new SceneRunner(
+                new FakeScenePlayback(),
+                new FakeOptionsView(),
+                replayState,
+                new FakeRollbackHistory(),
+                new FakeProgressionReporter(),
+                new FakeSceneBacklog());
+
+            SceneRunResult result = await runner.RunAsync(
+                new SceneTransaction(
+                    chapter,
+                    chapter.CreateEntryState(),
+                    new[] { new ScenePathStep("wrong-episode", 0) }),
+                default);
+
+            Assert.That(result.Outcome, Is.EqualTo(SceneRunOutcome.SceneEnded));
+            Assert.That(replayState.BeginLoadReplayCount, Is.EqualTo(0));
         }
 
         [Test]
@@ -86,11 +103,10 @@ namespace Ked.Progression.Tests
             var runner = new SceneRunner(
                 playback,
                 new FakeOptionsView(),
-                new FakeSceneSeek(),
+                new FakeSceneReplayState(),
                 new FakeRollbackHistory(),
                 reporter,
-                new FakeSceneBacklog(),
-                new FakeDialogueChoiceReplay());
+                new FakeSceneBacklog());
 
             var driver = new ProgressionDriver(runner, lifecycle);
 
@@ -163,14 +179,14 @@ namespace Ked.Progression.Tests
         }
     }
 
-    internal sealed class FakeSceneSeek : ISceneSeek
+    internal sealed class FakeSceneReplayState : ISceneReplayState
     {
         public bool IsSeekingActive { get; private set; }
-        public int BeginCount { get; private set; }
+        public int BeginLoadReplayCount { get; private set; }
 
-        public void BeginLoadSeek(string nodeName, string lineId, int occurrence)
+        public void BeginLoadReplay()
         {
-            BeginCount++;
+            BeginLoadReplayCount++;
             IsSeekingActive = true;
         }
 
@@ -220,16 +236,6 @@ namespace Ked.Progression.Tests
         public void MarkSceneStart()
         {
             SceneStartCount++;
-        }
-    }
-
-    internal sealed class FakeDialogueChoiceReplay : IDialogueChoiceReplay
-    {
-        public List<DialogueChoiceRecord> Restored { get; } = new();
-
-        public void RestoreChoices(IReadOnlyList<DialogueChoiceRecord> choices)
-        {
-            Restored.AddRange(choices);
         }
     }
 
