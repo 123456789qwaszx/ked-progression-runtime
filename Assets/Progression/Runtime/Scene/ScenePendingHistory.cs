@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 
 namespace Ked.Progression
 {
@@ -8,56 +7,43 @@ namespace Ked.Progression
     {
         private sealed class ProgressionPick
         {
-            public EpisodeOption Option; // 실제 진행 계산용 
-            public string FromEpisodeId; // 저장 및 복원 가능한 선택 식별자
+            public EpisodeOption Option;
+            public string FromEpisodeId;
             public int SourceIndex;
-            public int Anchor; // RollbackHistory와 연결되는 위치
+            public int Anchor;
         }
 
-        // Rollback하면 해당 지점 이후에 봤던 Episode를 제거해야함.
         private sealed class WatchedEpisode
         {
             public string EpisodeId;
             public int Anchor;
         }
 
-        // 지금까지 알고 있는 선택 기록 전체
         private readonly List<ProgressionPick> _picks = new();
         private readonly List<WatchedEpisode> _watched = new();
-        
-        private readonly List<EpisodeOption> _foldBuffer = new(); // 계산용 재사용버퍼
-        
-        // 선택 기록 전체 중, 현재 Scene 실행이 실제로 소비한 위치
+        private readonly List<EpisodeOption> _foldBuffer = new();
+
         public int PathCursor { get; private set; }
-
         public bool HasRecordedChoice => PathCursor < _picks.Count;
-
         public int RecordedChoiceCount => _picks.Count;
 
-        // Load 시점에 과거 선택 기록을 미리 적재
-        public void RestoreChoice(
-            EpisodeOption option,
-            string fromEpisodeId,
-            int sourceIndex)
+        public void RestoreChoice(EpisodeOption option, string fromEpisodeId, int sourceIndex)
         {
             _picks.Add(new ProgressionPick
             {
                 Option = option,
                 FromEpisodeId = fromEpisodeId,
                 SourceIndex = sourceIndex,
-
                 Anchor = -1,
             });
         }
 
-        // replay하면서 하나씩 소비
         public SceneChoice TakeRecordedChoice(int anchor)
         {
             if (!HasRecordedChoice)
                 throw new InvalidOperationException("자동 응답할 진행 선택 기록이 없다.");
-            
+
             ProgressionPick pick = _picks[PathCursor++];
-            
             pick.Anchor = anchor;
 
             return new SceneChoice(
@@ -67,7 +53,6 @@ namespace Ked.Progression
                 SceneChoiceSource.Recorded);
         }
 
-        // replay 기록이 끝난 뒤 지금 새롭게 발생한 선택을 기록
         public void RecordChoice(SceneChoice choice, int anchor)
         {
             if (choice.Source == SceneChoiceSource.Recorded)
@@ -75,15 +60,14 @@ namespace Ked.Progression
 
             if (PathCursor != _picks.Count)
                 throw new InvalidOperationException("소비되지 않은 이전 진행 선택 기록이 남아 있다.");
-            
-            _picks.Add(
-                new ProgressionPick
-                {
-                    Option = choice.Option,
-                    FromEpisodeId = choice.FromEpisodeId,
-                    SourceIndex = choice.SourceIndex,
-                    Anchor = anchor,
-                });
+
+            _picks.Add(new ProgressionPick
+            {
+                Option = choice.Option,
+                FromEpisodeId = choice.FromEpisodeId,
+                SourceIndex = choice.SourceIndex,
+                Anchor = anchor,
+            });
 
             PathCursor = _picks.Count;
         }
@@ -92,19 +76,15 @@ namespace Ked.Progression
         {
             if (!HasRecordedChoice)
                 return;
-            
-            _picks.RemoveRange(
-                PathCursor,
-                _picks.Count - PathCursor);
+
+            _picks.RemoveRange(PathCursor, _picks.Count - PathCursor);
         }
 
-        // Anchor 10 : choice A
-        // Anchor 20 : choice B
-        // Anchor 30 : choice C
-        // 에서 사용자가 history 20으로 rollback했다면:
-        //
-        // Anchor > 20 인 C를 지움.
-        // 그 이후에 고른 선택 + 그 이후에 시청했다고 pending 처리한 Episode 모두 삭제.
+        public void RestartReplay()
+        {
+            PathCursor = 0;
+        }
+
         public void RewindAfter(int historyIndex)
         {
             for (int i = _picks.Count - 1; i >= 0; i--)
@@ -123,18 +103,12 @@ namespace Ked.Progression
                 PathCursor = _picks.Count;
         }
 
-        public void RestartReplay()
-        {
-            PathCursor = 0;
-        }
-        
         public void ClearChoices()
         {
             _picks.Clear();
             PathCursor = 0;
         }
-        
-        
+
         public void NoteWatched(EpisodeNode episode, int anchor)
         {
             if (string.IsNullOrEmpty(episode.EventKey))
@@ -142,20 +116,17 @@ namespace Ked.Progression
 
             for (int i = 0; i < _watched.Count; i++)
             {
-                if (string.Equals(
-                        _watched[i].EpisodeId, episode.EpisodeId, StringComparison.Ordinal))
+                if (string.Equals(_watched[i].EpisodeId, episode.EpisodeId, StringComparison.Ordinal))
                     return;
             }
 
-            _watched.Add(
-                new WatchedEpisode
-                {
-                    EpisodeId = episode.EpisodeId,
-                    Anchor = anchor,
-                });
+            _watched.Add(new WatchedEpisode
+            {
+                EpisodeId = episode.EpisodeId,
+                Anchor = anchor,
+            });
         }
 
-        // 현재 실행이 실제로 지나온 경로
         public IReadOnlyList<EpisodeOption> PendingOptions()
         {
             _foldBuffer.Clear();
@@ -166,12 +137,45 @@ namespace Ked.Progression
             return _foldBuffer;
         }
 
-        // Scene pending 상태와 ProgressionState의 접점.
-        public ProgressionState FoldInto(
-            ChapterProgression chapter, 
-            ProgressionState entryState)
+        public ProgressionState FoldInto(ChapterProgression chapter, ProgressionState entryState)
         {
             return entryState.FoldChoices(chapter, PendingOptions());
+        }
+
+        public List<CommittedChoice> CreateCommittedChoices()
+        {
+            var result = new List<CommittedChoice>(PathCursor);
+
+            for (int i = 0; i < PathCursor; i++)
+            {
+                ProgressionPick pick = _picks[i];
+                result.Add(new CommittedChoice(pick.FromEpisodeId, pick.SourceIndex));
+            }
+
+            return result;
+        }
+
+        public List<string> CreateWatchedEpisodeIds()
+        {
+            var result = new List<string>(_watched.Count);
+
+            for (int i = 0; i < _watched.Count; i++)
+                result.Add(_watched[i].EpisodeId);
+
+            return result;
+        }
+
+        public IReadOnlyList<CommittedChoice> CreatePendingPath()
+        {
+            var result = new List<CommittedChoice>(PathCursor);
+
+            for (int i = 0; i < PathCursor; i++)
+            {
+                ProgressionPick pick = _picks[i];
+                result.Add(new CommittedChoice(pick.FromEpisodeId, pick.SourceIndex));
+            }
+
+            return result;
         }
     }
 }
