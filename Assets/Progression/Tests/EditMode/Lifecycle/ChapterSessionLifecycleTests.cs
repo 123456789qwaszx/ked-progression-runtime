@@ -112,6 +112,94 @@ namespace Ked.Progression.Tests
             Assert.Throws<InvalidOperationException>(() => scene.Commit());
         }
 
+        [Test]
+        public async Task RestorePath_IsUsedOnlyByFirstScene()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var recorder = new BoundaryRecorder();
+            var boundaries = new ProgressionBoundaries(recorder, recorder, recorder);
+            var session = new ChapterSession(chapter, boundaries);
+            ProgressionState restoredState = chapter.CreateEntryState();
+            var path = new[] { new ScenePathStep("a", 0) };
+
+            await session.EnterAsync(restoredState, path);
+
+            Assert.That(recorder.SceneEntries, Is.EqualTo(new[] { SceneEntryKind.Restore }));
+
+            await session.CompleteCurrentEpisodeAsync();
+            await session.AdvanceRecordedAsync();
+
+            ChapterAdvance second = await session.CompleteCurrentEpisodeAsync();
+            await session.AdvanceAsync(second.Options[0], SceneChoiceSource.User);
+
+            Assert.That(session.Scene.SceneId, Is.EqualTo("scene-b"));
+            Assert.That(
+                recorder.SceneEntries,
+                Is.EqualTo(new[] { SceneEntryKind.Restore, SceneEntryKind.Normal }));
+        }
+
+        [Test]
+        public async Task InvalidRestorePath_EntersSceneAsNormal()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var recorder = new BoundaryRecorder();
+            var boundaries = new ProgressionBoundaries(recorder, recorder, recorder);
+            var session = new ChapterSession(chapter, boundaries);
+            ProgressionState restoredState = chapter.CreateEntryState();
+            var path = new[] { new ScenePathStep("wrong", 0) };
+
+            await session.EnterAsync(restoredState, path);
+
+            Assert.That(session.Scene.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(session.Scene.RecordedChoiceCount, Is.Zero);
+            Assert.That(recorder.SceneEntries, Is.EqualTo(new[] { SceneEntryKind.Normal }));
+        }
+
+        [Test]
+        public async Task RecordedPath_CanAdvanceWithoutUserChoice()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var recorder = new BoundaryRecorder();
+            var boundaries = new ProgressionBoundaries(recorder, recorder, recorder);
+            var session = new ChapterSession(chapter, boundaries);
+            ProgressionState restoredState = chapter.CreateEntryState();
+            var path = new[]
+            {
+                new ScenePathStep("a", 0),
+                new ScenePathStep("b", 0),
+            };
+
+            await session.EnterAsync(restoredState, path);
+
+            await session.CompleteCurrentEpisodeAsync();
+            await session.AdvanceRecordedAsync(rollbackAnchor: 10);
+
+            Assert.That(session.Scene.CurrentEpisodeId, Is.EqualTo("b"));
+            Assert.That(session.Scene.HasRecordedChoice, Is.True);
+
+            await session.CompleteCurrentEpisodeAsync();
+            await session.AdvanceRecordedAsync(rollbackAnchor: 20);
+
+            Assert.That(session.Scene.SceneId, Is.EqualTo("scene-b"));
+            Assert.That(session.Scene.CurrentEpisodeId, Is.EqualTo("c"));
+            Assert.That(session.State.CurrentEpisodeId, Is.EqualTo("c"));
+            Assert.That(session.IsWaitingForAdvance, Is.False);
+            Assert.That(
+                recorder.SceneEntries,
+                Is.EqualTo(new[] { SceneEntryKind.Restore, SceneEntryKind.Normal }));
+        }
+
+        [Test]
+        public void RestorePath_requires_restored_chapter_state()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var session = new ChapterSession(chapter);
+            var path = new[] { new ScenePathStep("a", 0) };
+
+            Assert.ThrowsAsync<ArgumentException>(
+                async () => await session.EnterAsync(restorePath: path));
+        }
+
         private static ChapterProgression CreateChapter()
         {
             EpisodeOption aToB = EpisodeOption.Choice("A to B", "b");
@@ -155,6 +243,7 @@ namespace Ked.Progression.Tests
             IEpisodeBoundary
         {
             public List<string> Events { get; } = new();
+            public List<SceneEntryKind> SceneEntries { get; } = new();
 
             public Task EnterAsync(ChapterEnterContext context)
             {
@@ -171,6 +260,7 @@ namespace Ked.Progression.Tests
             public Task EnterAsync(SceneEnterContext context)
             {
                 Events.Add($"Scene.Enter:{context.Scene.SceneId}");
+                SceneEntries.Add(context.EntryKind);
                 return Task.CompletedTask;
             }
 

@@ -9,6 +9,12 @@ namespace Ked.Progression
         Restore = 1,
     }
 
+    public enum SceneEntryKind
+    {
+        Normal = 0,
+        Restore = 1,
+    }
+
     public readonly struct ChapterEnterContext
     {
         public ChapterProgression Chapter { get; }
@@ -41,10 +47,14 @@ namespace Ked.Progression
     public readonly struct SceneEnterContext
     {
         public SceneProgression Scene { get; }
+        public SceneEntryKind EntryKind { get; }
 
-        public SceneEnterContext(SceneProgression scene)
+        public SceneEnterContext(
+            SceneProgression scene,
+            SceneEntryKind entryKind = SceneEntryKind.Normal)
         {
             Scene = scene ?? throw new ArgumentNullException(nameof(scene));
+            EntryKind = entryKind;
         }
     }
 

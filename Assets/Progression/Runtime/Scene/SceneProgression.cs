@@ -76,6 +76,46 @@ namespace Ked.Progression
             CurrentEpisodeId = selected.Option.TargetEpisodeId;
         }
 
+        // Host save의 progression path만 받아 현재 Chapter graph에 맞는지 검증하고
+        // root부터 다시 소비할 recorded choice로 적재한다.
+        // 하나라도 맞지 않으면 부분 경로를 남기지 않고 root 일반 진행으로 되돌린다.
+        public bool TryRestorePath(IReadOnlyList<ScenePathStep> path)
+        {
+            RequireOpen();
+
+            if (path == null)
+                throw new ArgumentNullException(nameof(path));
+
+            _history.ClearChoices();
+            CurrentEpisodeId = RootEpisodeId;
+
+            string cursor = RootEpisodeId;
+
+            for (int i = 0; i < path.Count; i++)
+            {
+                ScenePathStep step = path[i];
+
+                if (!string.Equals(step.FromEpisodeId, cursor, StringComparison.Ordinal) ||
+                    !Chapter.TryGetNode(cursor, out EpisodeNode episode) ||
+                    step.OptionIndex < 0 ||
+                    step.OptionIndex >= episode.NextOptions.Count)
+                {
+                    _history.ClearChoices();
+                    CurrentEpisodeId = RootEpisodeId;
+                    return false;
+                }
+
+                EpisodeOption option = episode.NextOptions[step.OptionIndex];
+
+                _history.RestoreChoice(option, cursor, step.OptionIndex);
+                cursor = option.TargetEpisodeId;
+            }
+
+            _history.RestartReplay();
+            CurrentEpisodeId = RootEpisodeId;
+            return true;
+        }
+
         // Load 시점에 저장된 progression 경로를 미리 적재한다.
         // 실제 replay에서는 TakeRecordedChoice()로 root부터 하나씩 다시 소비한다.
         public void RestoreChoice(

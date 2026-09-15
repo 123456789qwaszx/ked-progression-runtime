@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Ked.Progression
@@ -33,10 +34,18 @@ namespace Ked.Progression
 
         // 새 Chapter면 ChapterProgression의 초기 상태를 사용한다.
         // 이어하기면 저장에서 복원한 Chapter 상태를 그대로 진입 상태로 사용한다.
-        public async Task EnterAsync(ProgressionState restoredState = null)
+        // restorePath는 저장에서 복원하는 첫 Scene에만 적용한다.
+        public async Task EnterAsync(
+            ProgressionState restoredState = null,
+            IReadOnlyList<ScenePathStep> restorePath = null)
         {
             if (IsStarted)
                 throw new InvalidOperationException("Chapter는 두 번 시작할 수 없다.");
+
+            if (restorePath != null && restoredState == null)
+                throw new ArgumentException(
+                    "복원 경로는 복원된 Chapter 상태와 함께 전달해야 한다.",
+                    nameof(restorePath));
 
             State = restoredState ?? Chapter.CreateEntryState();
 
@@ -47,14 +56,14 @@ namespace Ked.Progression
             await _boundaries.Chapter.EnterAsync(
                 new ChapterEnterContext(Chapter, State, entryKind));
 
-            await EnterSceneAsync(State);
+            await EnterSceneAsync(State, restorePath);
 
             IsStarted = true;
         }
 
         // 현재 Episode의 재생이 끝났음을 Progression에 알린다.
         // 여기서 watched를 기록하고 다음 진행 가능성을 계산한 뒤 Episode Exit 경계를 닫는다.
-        // 선택/자동 간선을 실제로 타는 것은 AdvanceAsync에서 수행한다.
+        // 선택/자동 간선을 실제로 타는 것은 AdvanceAsync 또는 AdvanceRecordedAsync에서 수행한다.
         public async Task<ChapterAdvance> CompleteCurrentEpisodeAsync(int rollbackAnchor = -1)
         {
             RequireRunning();
@@ -110,7 +119,38 @@ namespace Ked.Progression
             bool sameScene = Chapter.IsSameScene(fromEpisodeId, targetEpisodeId);
 
             Scene.Advance(selected, source, rollbackAnchor);
-            _hasPendingAdvance = false;
+            ClearPendingAdvance();
+
+            if (sameScene)
+            {
+                await _boundaries.Episode.EnterAsync(
+                    new EpisodeEnterContext(Scene, Scene.CurrentEpisode));
+                return;
+            }
+
+            await ExitSceneAsync();
+            await EnterSceneAsync(State);
+        }
+
+        // 저장된 progression path의 다음 선택을 UI 입력 없이 소비한다.
+        // Recorded choice는 이미 Scene history에 있으므로 새 pending choice로 다시 기록하지 않는다.
+        public async Task AdvanceRecordedAsync(int rollbackAnchor = -1)
+        {
+            RequireRunning();
+
+            if (!_hasPendingAdvance)
+                throw new InvalidOperationException("먼저 현재 Episode를 완료해야 한다.");
+
+            if (!Scene.HasRecordedChoice)
+                throw new InvalidOperationException("자동으로 소비할 저장된 진행 선택이 없다.");
+
+            string fromEpisodeId = Scene.CurrentEpisodeId;
+
+            Scene.TakeRecordedChoice(rollbackAnchor);
+            string targetEpisodeId = Scene.CurrentEpisodeId;
+            bool sameScene = Chapter.IsSameScene(fromEpisodeId, targetEpisodeId);
+
+            ClearPendingAdvance();
 
             if (sameScene)
             {
@@ -132,8 +172,7 @@ namespace Ked.Progression
         {
             RequireRunning();
 
-            _pendingAdvance = default;
-            _hasPendingAdvance = false;
+            ClearPendingAdvance();
 
             Scene.RewindAfter(rollbackAnchor);
             Scene.RestartReplay();
@@ -142,12 +181,19 @@ namespace Ked.Progression
                 new EpisodeEnterContext(Scene, Scene.CurrentEpisode));
         }
 
-        private async Task EnterSceneAsync(ProgressionState entryState)
+        private async Task EnterSceneAsync(
+            ProgressionState entryState,
+            IReadOnlyList<ScenePathStep> restorePath = null)
         {
             Scene = new SceneProgression(Chapter, entryState);
 
+            SceneEntryKind entryKind = SceneEntryKind.Normal;
+
+            if (restorePath != null && Scene.TryRestorePath(restorePath))
+                entryKind = SceneEntryKind.Restore;
+
             await _boundaries.Scene.EnterAsync(
-                new SceneEnterContext(Scene));
+                new SceneEnterContext(Scene, entryKind));
 
             await _boundaries.Episode.EnterAsync(
                 new EpisodeEnterContext(Scene, Scene.CurrentEpisode));
@@ -181,6 +227,12 @@ namespace Ked.Progression
             }
 
             return false;
+        }
+
+        private void ClearPendingAdvance()
+        {
+            _pendingAdvance = default;
+            _hasPendingAdvance = false;
         }
 
         private void RequireRunning()
