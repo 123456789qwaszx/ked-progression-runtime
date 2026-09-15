@@ -63,7 +63,7 @@ Rollback_DoesNotExitOrReenterScene                 [ChapterSession 검증 추가
 Rollback_ReplaysFromSceneRoot                      [검증 추가]
 Rollback_RemovesFuturePendingChoices               [검증 추가]
 Rollback_RemovesFutureWatchedEvents                [미완료]
-Restore_EntersChapterWithRestoredState             [미완료]
+Restore_EntersChapterWithRestoredState             [P3 경로에서 부분 검증, 명시 테스트 보강 필요]
 NewChapter_UsesInitialState                        [기존 코드 존재, 명시 테스트 보강 필요]
 ```
 
@@ -153,45 +153,75 @@ Replay_ReentersRootEpisode                          [완료]
 
 # P3 — Load Plan / Restore Path
 
-상태: 다음 작업
+상태: **구현 완료 / Unity Test Runner 확인 필요**
 
-원본 `SavedLoadPlan`의 의미를 progression path와 presentation seek 정보로 나눠 본다.
+원본 `SavedLoadPlan`은 두 책임을 함께 들고 있다.
 
-Progression이 소유할 것:
+```text
+Progression
+- Path: FromEpisodeId + OptionIndex
 
-- Scene root
-- 과거 progression 선택 경로
-- recorded choice cursor
+Presentation
+- YarnChoices
+- SaveLineTarget(NodeName / LineId / Occurrence)
+```
 
-Host/Presentation이 소유할 것:
+새 Runtime에는 `SavedLoadPlan` 전체를 옮기지 않는다.
 
-- Yarn choices
-- line target
-- occurrence
-- seek 상태
+Progression Runtime이 소유하는 최소 복원 좌표:
 
-작업:
+```csharp
+public readonly struct ScenePathStep
+{
+    public string FromEpisodeId { get; }
+    public int OptionIndex { get; }
+}
+```
 
-1. 저장된 progression path를 `SceneProgression.RestoreChoice()`로 적재
-2. root부터 recorded choice 자동 소비
-3. saved path가 현재 graph와 맞지 않으면 progression path를 버리고 root 일반 진행
-4. 첫 Scene에서 restore path를 한 번만 소비
-5. presentation seek는 progression path와 별도 계약으로 유지
+구현:
+
+1. `SceneProgression.TryRestorePath(IReadOnlyList<ScenePathStep>)`
+   - root에서 시작
+   - `FromEpisodeId == cursor` 검증
+   - Episode 존재 검증
+   - OptionIndex 범위 검증
+   - valid path는 recorded choice로 적재
+   - 하나라도 실패하면 전체 recorded path 제거 후 root fallback
+2. `SceneEntryKind.Normal / Restore`
+   - valid restore path가 적용된 첫 Scene만 `Restore`
+   - invalid path는 `Normal`
+3. `ChapterSession.EnterAsync(restoredState, restorePath)`
+   - restorePath는 restoredState와 함께만 허용
+   - 첫 Scene에만 restorePath 전달
+4. `ChapterSession.AdvanceRecordedAsync()`
+   - UI 선택 없이 recorded choice를 하나 소비
+   - 같은 Scene이면 다음 Episode Enter
+   - Scene이 바뀌면 기존 정상 commit/exit/enter 규칙을 그대로 사용
+5. Presentation 정보는 Runtime 타입에 추가하지 않음
+   - `YarnChoices` 없음
+   - `SaveLineTarget` 없음
+   - line seek 상태 없음
 
 테스트:
 
 ```text
-RestorePath_ReplaysRecordedChoices
-InvalidRestorePath_FallsBackToRoot
-UnconsumedRestorePath_IsDiscardedAfterSeek
-RestorePath_IsConsumedOnlyByFirstScene
+RestorePath_ReplaysRecordedChoices                 [추가]
+InvalidRestorePath_FallsBackToRoot                  [추가]
+InvalidRestorePath_ClearsEntireRecordedPath         [추가]
+RestorePath_DoesNotCommitScene                      [추가]
+RestorePath_IsUsedOnlyByFirstScene                  [추가]
+InvalidRestorePath_EntersSceneAsNormal              [추가]
+RecordedPath_CanAdvanceWithoutUserChoice            [추가]
+RestorePath_requires_restored_chapter_state         [추가]
 ```
+
+현재 저장소에는 GitHub Actions Unity workflow가 없으므로 위 테스트의 실제 Unity compile/pass는 아직 확인하지 못했다.
 
 ---
 
 # P4 — Chapter Boundary 상세화
 
-상태: 대기
+상태: **다음 작업**
 
 현재 `ChapterEntryKind.New / Restore`를 기준으로 실제 게임의 Chapter 경계 작업 순서를 고정한다.
 
@@ -203,6 +233,11 @@ Chapter definition 확정
 → backlog restore/new-session reset
 → first Scene 진입
 ```
+
+주의:
+
+- Backlog 전체 초기화는 Scenario/New Game 수명과 섞일 수 있으므로 원본을 다시 확인한 뒤 Chapter Boundary에 넣을지 결정한다.
+- P3에서 Scene restore path와 Presentation seek를 분리했으므로, P4에서는 Yarn variable/backlog 복원 순서와 first Scene enter의 선후관계만 다룬다.
 
 테스트:
 
@@ -381,8 +416,101 @@ Episode root 재진입
 
 ---
 
+# Checkpoint 3 — SavedLoadPlan 절단 / Restore Path
+
+## Reference
+
+원본 `SceneRunner.ApplyLoadPlan()`은 `SavedLoadPlan.Path`를 Scene root부터 순서대로 검증한다.
+
+```text
+cursor = Scene Root
+→ step.FromEpisodeId == cursor
+→ Episode 존재
+→ OptionIndex 유효
+→ recorded choice 적재
+→ cursor = target
+```
+
+중간 한 단계라도 실패하면 이미 적재한 choice까지 `ClearChoices()`로 전부 버리고 root 일반 진행으로 fallback한다.
+
+모든 progression path 검증이 성공한 뒤에만 별도로:
+
+```text
+YarnChoices 복원
+SaveLineTarget(NodeName / LineId / Occurrence) seek 시작
+```
+
+을 수행한다.
+
+또한 원본 `ProgressionDriver`는 받은 `SavedLoadPlan`을 첫 Scene 생성 때 꺼낸 뒤 즉시 null로 만들어 한 번만 소비한다.
+
+## Implemented
+
+- `ScenePathStep(FromEpisodeId, OptionIndex)` 추가
+- `SceneProgression.TryRestorePath()` 추가
+- invalid path 전체 제거 + root fallback
+- `SceneEntryKind.Normal / Restore` 추가
+- valid path가 적용된 첫 Scene만 `Restore`
+- invalid path는 `Normal`
+- `ChapterSession.EnterAsync(restoredState, restorePath)` 추가
+- restorePath 단독 호출 금지
+- `ChapterSession.AdvanceRecordedAsync()` 추가
+- recorded path가 UI 선택 없이 기존 Scene transition/commit 흐름을 사용하도록 연결
+- `YarnChoices`, `SaveLineTarget`, seek 관련 타입은 Progression Runtime에 추가하지 않음
+- P3 characterization tests 추가
+
+## Parity
+
+Progression 영역의 의미는 원본과 일치한다.
+
+```text
+valid path
+→ root부터 recorded path 적재
+→ UI 선택 없이 순서대로 재소비 가능
+
+invalid path
+→ 부분 복원 금지
+→ recorded path 전체 제거
+→ root 일반 진행
+
+first Scene
+→ restore path 한 번만 적용
+
+next Scene
+→ normal entry
+```
+
+특히 `SavedLoadPlan` 전체를 Runtime으로 복사하지 않고 `Path`만 `ScenePathStep[]`로 절단했기 때문에, 원본의 progression graph 복원 책임과 presentation seek 책임을 분리했다.
+
+## Gap
+
+1. `YarnChoices` 복원과 `SaveLineTarget` seek는 의도적으로 Host/Presentation에 남아 있으며 아직 새 Runtime boundary와 연결하지 않았다.
+2. 원본에서 recorded path 자동 소비는 presentation seek 활성 상태와 함께 움직이지만, 새 Runtime은 presentation 상태를 모르므로 Host가 언제 `AdvanceRecordedAsync()`를 호출할지 연결 계약이 아직 필요하다.
+3. watched event rewind 결과를 public commit/result로 관찰하는 계약은 여전히 미완료다.
+4. 저장소에 Unity CI workflow가 없어 이번 P3 테스트의 실제 Unity Test Runner compile/pass는 확인하지 못했다.
+
+## Plan Update
+
+다음은 **P4 — Chapter Boundary 상세화**로 진행한다.
+
+P3 자체의 progression 절단면은 더 확장하지 않는다.
+
+P4에서 우선 원본의 실제 Chapter 진입 순서를 다시 확인한다.
+
+```text
+Chapter state 결정
+→ Yarn chapter variable 초기화
+→ saved Yarn variable restore
+→ backlog restore/new-session 처리
+→ first Scene enter
+```
+
+단, Backlog 초기화/복원 중 Scenario 수명에 속하는 부분은 P5로 남긴다.
+
+---
+
 # 바로 다음 작업
 
-**P3 — Load Plan / Restore Path**
+**P4 — Chapter Boundary 상세화**
 
-먼저 원본 `SavedLoadPlan`, `SavedChoice`, `SaveLineTarget`, `SceneRunner.ApplyLoadPlan()`을 다시 대조한 뒤 새 Runtime이 소유할 최소 restore path 모델을 결정한다.
+먼저 원본 `ProgressionLauncher` / `ProgressionDriver.SyncChapterVariables()` / Backlog restore 순서와 새 `ChapterSession.EnterAsync()`의 boundary 호출 순서를 대조한다.
