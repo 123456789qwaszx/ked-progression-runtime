@@ -57,9 +57,9 @@ README에 현재 조사 결과를 고정한다.
 ```text
 NormalSceneTransition_CommitsScene                 [기존 테스트로 부분 검증]
 ChapterEnd_CommitsFinalScene                       [기존 테스트로 부분 검증]
-Rollback_DoesNotCommitScene                        [SceneProgression 수준 검증 추가]
-Rollback_KeepsSameScene                            [SceneProgression 수준 검증 추가]
-Rollback_DoesNotExitOrReenterScene                 [미완료 - P2에서 ChapterSession 수준 검증]
+Rollback_DoesNotCommitScene                        [검증 추가]
+Rollback_KeepsSameScene                            [검증 추가]
+Rollback_DoesNotExitOrReenterScene                 [ChapterSession 검증 추가]
 Rollback_ReplaysFromSceneRoot                      [검증 추가]
 Rollback_RemovesFuturePendingChoices               [검증 추가]
 Rollback_RemovesFutureWatchedEvents                [미완료]
@@ -77,15 +77,13 @@ NewChapter_UsesInitialState                        [기존 코드 존재, 명시
 
 # P1 — SceneProgression Replay 계약 완성
 
-현재 `SceneProgression`에는 `RewindAfter()`와 `RestartReplay()`가 있으며, recorded path 소비 흐름을 Scene API로 정리한다.
+상태: 진행 중
 
 ## P1-1. recorded choice API 정리
 
 상태: **구현 완료 / Unity Test Runner 확인 필요**
 
-`ScenePendingHistory`를 외부에 노출하지 않고 `SceneProgression`이 다음 책임을 제공한다.
-
-현재 추가된 API:
+현재 `SceneProgression`이 다음 replay path API를 제공한다.
 
 ```csharp
 public bool HasRecordedChoice { get; }
@@ -101,8 +99,6 @@ public void DiscardUnconsumedChoices()
 
 상태: **부분 완료**
 
-테스트:
-
 ```text
 RewindAfter_RemovesChoicesAfterAnchor              [완료]
 RewindAfter_RemovesWatchedAfterAnchor              [미완료]
@@ -112,34 +108,24 @@ Replay_RecordedChoicesCanBeConsumedAgain            [완료]
 RestoredPath_CanBeConsumedFromSceneRoot             [완료]
 ```
 
-완료 조건:
-
-- Scene 내부 replay가 Scene commit 없이 독립적으로 계산 가능하다. **choice/cursor 기준 완료**
-- EntryState는 그대로 유지된다. **검증 추가 완료**
-- watched event rewind까지 원본과 동등하게 검증한다. **남음**
-- Unity Test Runner에서 compile/pass를 확인한다. **남음**
+남은 핵심은 watched event 결과를 자연스럽게 관찰할 commit result 계약이다.
 
 ---
 
 # P2 — ChapterSession Replay 통로 연결
 
-상태: 대기
+상태: **구현 완료 / Unity Test Runner 확인 필요**
 
-현재 `ChapterSession`은 정상 forward progression만 표현한다.
-
-같은 Scene을 유지한 replay 통로를 추가한다.
-
-핵심 규칙:
+현재 `ChapterSession.ReplayAsync(rollbackAnchor)`는 다음 순서를 고정한다.
 
 ```text
-Rollback request
-→ pending advance 취소
-→ Scene rewind
-→ Scene root cursor 복귀
-→ recorded path 재소비 가능 상태
+pending advance 폐기
+→ 현재 Scene.RewindAfter(anchor)
+→ 같은 Scene.RestartReplay()
+→ root Episode.Enter
 ```
 
-이 과정에서 다음은 호출되면 안 된다.
+Replay에서 다음은 발생하지 않는다.
 
 ```text
 Scene.Exit
@@ -148,26 +134,28 @@ Chapter.Exit
 Scene.Commit
 ```
 
-테스트:
+중요한 보정:
+
+- Scene boundary는 다시 열지 않는다.
+- 하지만 원본 `SceneRunner.RestartReplayAsync` 이후 root Episode node가 실제로 다시 재생되므로 `Episode.Enter`는 다시 발생한다.
+
+검증 추가:
 
 ```text
-Replay_DoesNotExitScene
-Replay_DoesNotEnterSceneAgain
-Replay_KeepsChapterState
-Replay_ClearsPendingAdvance
+Replay_DoesNotExitScene                             [완료]
+Replay_DoesNotEnterSceneAgain                       [완료]
+Replay_KeepsChapterState                            [완료]
+Replay_ClearsPendingAdvance                         [완료]
+Replay_ReentersRootEpisode                          [완료]
 ```
-
-완료 조건:
-
-- 원본 `SceneRunner.RequestReplayAsync` / `RestartReplayAsync`의 progression 의미가 Unity/Yarn 없이 재현된다.
 
 ---
 
 # P3 — Load Plan / Restore Path
 
-상태: 대기
+상태: 다음 작업
 
-원본 SavedLoadPlan의 의미를 progression과 presentation 좌표로 분해한다.
+원본 `SavedLoadPlan`의 의미를 progression path와 presentation seek 정보로 나눠 본다.
 
 Progression이 소유할 것:
 
@@ -184,10 +172,11 @@ Host/Presentation이 소유할 것:
 
 작업:
 
-1. 저장된 progression path 복원
+1. 저장된 progression path를 `SceneProgression.RestoreChoice()`로 적재
 2. root부터 recorded choice 자동 소비
-3. saved path가 현재 graph와 맞지 않을 때 안전하게 일반 진행으로 fallback
-4. 첫 Scene에서 load plan 한 번만 소비
+3. saved path가 현재 graph와 맞지 않으면 progression path를 버리고 root 일반 진행
+4. 첫 Scene에서 restore path를 한 번만 소비
+5. presentation seek는 progression path와 별도 계약으로 유지
 
 테스트:
 
@@ -195,6 +184,7 @@ Host/Presentation이 소유할 것:
 RestorePath_ReplaysRecordedChoices
 InvalidRestorePath_FallsBackToRoot
 UnconsumedRestorePath_IsDiscardedAfterSeek
+RestorePath_IsConsumedOnlyByFirstScene
 ```
 
 ---
@@ -205,8 +195,6 @@ UnconsumedRestorePath_IsDiscardedAfterSeek
 
 현재 `ChapterEntryKind.New / Restore`를 기준으로 실제 게임의 Chapter 경계 작업 순서를 고정한다.
 
-Chapter Enter에서 host가 연결할 수 있는 항목:
-
 ```text
 Chapter definition 확정
 → initial/restored ProgressionState 결정
@@ -215,8 +203,6 @@ Chapter definition 확정
 → backlog restore/new-session reset
 → first Scene 진입
 ```
-
-Chapter Exit에서는 Chapter 결과를 확정하되, Scene commit 이후에만 호출한다.
 
 테스트:
 
@@ -232,8 +218,6 @@ ChapterExit_HappensAfterFinalSceneCommit
 
 상태: 대기
 
-Scenario 레벨 수명을 도입한다.
-
 예상 소유 데이터:
 
 - permanent stats
@@ -241,8 +225,6 @@ Scenario 레벨 수명을 도입한다.
 - endings
 - backlog session state
 - current Chapter
-
-New Game과 Restore를 Scenario 진입 통로로 구분한다.
 
 핵심 규칙:
 
@@ -266,7 +248,7 @@ ChapterTransition_CreatesNewChapterState
 
 상태: 대기
 
-이 단계까지는 Scene/Chapter의 정상 lifecycle 안에 Stop/Stale을 넣지 않는다.
+Scene/Chapter의 정상 lifecycle 안에 Stop/Stale을 넣지 않는다.
 
 상위 실행기에서 다음을 다룬다.
 
@@ -290,17 +272,11 @@ stale/cancelled run은
 
 필요할 경우 generation/version 또는 cancellation ownership을 이 단계에서 도입한다.
 
-원본 `ProgressionLauncher` / `ProgressionDriver`의 동작을 기준으로 설계한다.
-
 ---
 
 # P7 — 실제 ked-presentation-runtime 재연결
 
 상태: 대기
-
-새 Runtime의 lifecycle 테스트가 안정되면 실제 게임 레포에 연결한다.
-
-예상 역할 분리:
 
 | 기존 요소 | 최종 책임 |
 | --- | --- |
@@ -318,63 +294,95 @@ stale/cancelled run은
 | SaveCoordinator | host/save 유지, Scene commit 결과 소비 |
 | ProgressionLauncher | 상위 실행 교체 역할로 축소 |
 
-완료 조건:
-
-- 기존 게임 동작과 parity 확보
-- 기존 Save/Load/Rollback/Skip 동작 유지
-- 실제 게임 레포의 Runner가 lifecycle wiring 중심으로 단순화
-
 ---
 
-# Checkpoint — README/PLAN 고정 + P1-1
+# Checkpoint 1 — README/PLAN 고정 + Scene replay path
 
 ## Reference
 
-원본 `ked-presentation-runtime`에서 Rollback은 같은 `SceneTransaction`을 유지한 채 playback만 중단/복원하고 root부터 replay한다. 정상 Scene 전환에서만 pending을 commit한다.
+원본에서 Rollback은 같은 `SceneTransaction`을 유지한 채 root부터 replay한다. 정상 Scene 전환에서만 pending을 commit한다.
 
 ## Implemented
 
-- lifecycle 의미를 `README.md`에 고정
-- 작업 순서를 `PLAN.md`에 고정
-- `SceneProgression`에 recorded path API 추가
-- `SceneChoice`를 replay 결과로 사용할 수 있도록 public으로 조정
-- `SceneReplayLifecycleTests` 추가
+- README / PLAN 고정
+- `SceneProgression` recorded path API
+- replay path characterization tests
 
 ## Parity
 
-현재 choice/cursor replay 의미는 원본과 일치한다.
+choice/cursor replay 의미는 원본과 일치한다.
+
+## Gap
+
+- watched event rewind 관찰 계약
+- ChapterSession replay boundary sequence
+- Unity Test Runner 실행 확인
+
+## Plan Update
+
+ChapterSession replay를 우선 연결한다.
+
+---
+
+# Checkpoint 2 — ChapterSession Replay
+
+## Reference
+
+원본 `SceneRunner.RestartReplayAsync`는 같은 Scene을 유지한다.
 
 ```text
-EntryState 고정
-→ pending choice 누적
-→ rollback anchor 이후 choice 제거
-→ root restart
-→ 남은 recorded choice 다시 소비
-→ Scene commit 없음
+Playback restore
+→ pending history rewind
+→ recorded path cursor reset
+→ Scene root cursor reset
+→ root Episode node 재생
+```
+
+따라서 Replay는 Scene Enter/Exit이 아니지만 root Episode는 다시 시작한다.
+
+## Implemented
+
+- `ChapterSession.ReplayAsync(int rollbackAnchor)` 추가
+- replay 시 pending advance 폐기
+- 같은 `SceneProgression` instance 유지
+- Chapter committed `State` 유지
+- Scene commit 금지
+- root `Episode.Enter` 재호출
+- `BoundaryRecorder`로 호출 순서 검증
+
+## Parity
+
+현재 progression lifecycle 기준으로 원본 의미와 일치한다.
+
+```text
+Scene 유지
+Chapter 유지
+Commit 없음
+Scene boundary 재호출 없음
+Episode root 재진입
 ```
 
 ## Gap
 
-- watched event rewind를 테스트에서 관찰할 수 있는 계약이 아직 없다.
-- ChapterSession이 replay를 아직 모른다.
-- 따라서 `Scene.Exit/Enter가 replay 중 호출되지 않는다`는 상위 경계 검증이 아직 없다.
-- Unity Test Runner compile/pass는 별도 확인이 필요하다.
+1. 실제 `RollbackHistory` target과 core `rollbackAnchor`를 누가 전달하는지는 host adapter 단계에서 연결해야 한다.
+2. watched event rewind 결과를 아직 public 결과로 관찰하지 않는다.
+3. SavedLoadPlan의 progression path와 line seek가 아직 새 Runtime 계약으로 정리되지 않았다.
+4. Unity Test Runner compile/pass 확인이 남아 있다.
 
 ## Plan Update
 
-다음 작업은 P1-2의 남은 watched rewind를 무리하게 API 노출로 해결하기보다, **P2 ChapterSession replay 통로를 먼저 연결하고 boundary sequence를 검증**한다.
+다음 작업은 **P3 Load Plan / Restore Path**다.
 
-watched event 결과는 이후 Scene commit 결과를 명시할 때 함께 관찰 가능하게 만드는 편이 자연스럽다.
+이유:
+
+- `SceneProgression.RestoreChoice()`와 recorded replay 기전이 생겼다.
+- 원본 Save/Load가 바로 이 path를 사용한다.
+- 여기서 progression path와 Yarn/line seek를 분리해 두면 이후 Chapter restore와 실제 presentation 재연결 경계가 명확해진다.
 
 ---
 
 # 바로 다음 작업
 
-**P2 — ChapterSession Replay 통로 연결**
+**P3 — Load Plan / Restore Path**
 
-1. 현재 pending advance를 replay 요청 시 폐기
-2. 현재 Scene에 `RewindAfter(anchor)` 적용
-3. 같은 Scene에서 `RestartReplay()` 적용
-4. Scene/Chapter boundary를 닫거나 다시 열지 않음
-5. `BoundaryRecorder`로 정확한 호출 순서 검증
-6. 작업 완료 후 다시 Reference → Implemented → Parity → Gap → Plan Update 수행
+먼저 원본 `SavedLoadPlan`, `SavedChoice`, `SaveLineTarget`, `SceneRunner.ApplyLoadPlan()`을 다시 대조한 뒤 새 Runtime이 소유할 최소 restore path 모델을 결정한다.
