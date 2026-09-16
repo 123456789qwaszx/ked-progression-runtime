@@ -2,6 +2,457 @@
 
 `ked-progression-runtime`은 `ked-presentation-runtime/refactor/offline-local-save`의 Progression 동작을 별도 Unity 환경에서 재현하고, 비주얼 노벨 진행 로직의 **판정 규칙과 생명주기 순서**를 테스트 가능한 형태로 고정하기 위한 프로젝트다.
 
+---
+# 1. Progression 계층
+
+Progression은 다음과 같은 수명 계층으로 나눈다.
+
+```text
+Game
+└─ Scenario
+   └─ Chapter
+      └─ Scene
+         └─ Episode
+```
+
+각 계층은 단순히 이야기의 크기를 나누는 것이 아니라, **서로 다른 생명주기와 상태의 소유 범위**를 나타낸다.
+
+```text
+Game ───────────────────────────────────── 플레이어 계정 단위 유지
+
+    Scenario ─────────────────────────────── 한 회차 동안 유지
+
+        Chapter ────────────────
+
+            Scene ────────
+                Episode ──
+                Episode ──
+            Scene ────────
+
+        Chapter ────────────────
+
+    Scenario 종료
+
+Game은 계속 유지
+```
+
+각 범위의 의미는 다음과 같다.
+
+* **Game**: 영구적으로 유지되는 플레이어 데이터
+* **Scenario**: 새 게임부터 엔딩 또는 회차 종료까지의 한 Playthrough
+* **Chapter**: 하나의 진행 그래프를 실행하는 단위
+* **Scene**: 여러 Episode를 묶는 Commit / Replay 생명주기 단위
+* **Episode**: 실제로 실행되는 최소 진행 노드
+
+---
+
+## Game
+```
+[1] PlayerData  
+- 플레이어 자체의 영구 데이터
+
+-업적
+-앨범 해금
+-엔딩 기록
+-회차를 넘어 유지되는 해금 정보
+```
+
+---
+
+## Scenario
+
+```
+[2]PlaythroughState  
+- Scenario는 한 번의 Playthrough를 감싸는 진행 단위
+
+-현재 Chapter
+-회차 진행 정보
+-Backlog
+```
+
+Scenario의 중요한 경계
+
+```text
+New Game
+→ 새로운 Scenario / Playthrough 생성
+
+Continue
+→ 저장된 PlaythroughState를 기준으로 Scenario 복원
+
+Manual Load
+→ 현재 실행 폐기
+→ 선택한 저장 상태를 기준으로 새로운 Scenario 실행 구성
+
+Ending
+→ 현재 Scenario 정상 종료
+
+Title Exit
+→ 현재 Scenario 실행 종료
+```
+
+Scenario가 종료되면 현재 Playthrough의 수명은 끝난다.
+
+하지만 Scenario 안에서 발생한 사건 중 일부는 상위의 `PlayerData`를 갱신할 수 있다.
+
+```text
+Scenario
+    │
+    ├─ 특정 Episode 시청
+    │       ↓
+    │   Album 해금
+    │
+    ├─ 조건 달성
+    │       ↓
+    │   Achievement 해금
+    │
+    └─ Ending 도달
+            ↓
+        EndingRecord 갱신
+
+                ↓
+
+            PlayerData
+```
+
+```text
+만약 Scenario가 끝나더라도 이미 `PlayerData`에 확정된 다음 정보는 유지된다.
+
+-Achievement
+-Album
+-EndingRecord
+```
+
+```text
+반면 Scenario에만 속하는 상태는 다음 Playthrough에서 새로 만들어진다.
+
+-CurrentChapter
+-ProgressionState
+-Backlog(Chapter가 바뀌어도 유지되는 정책)
+-회차 단위 상태
+```
+
+정리하면:
+
+```text
+PlayerData
+= 여러 Playthrough를 넘어 유지
+
+Scenario
+= 현재 한 Playthrough 동안 유지
+
+Chapter
+= 현재 Chapter 동안 유지
+
+Scene
+= 현재 Commit / Replay 경계 동안 유지
+
+Episode
+= 현재 실행 중인 노드 동안 유지
+```
+
+---
+
+## Chapter
+
+- **하나의 진행 그래프와 그 안에서 사용하는 상태 규칙을 묶는 단위**.
+
+Chapter 소유 데이터.
+
+```text
+ChapterProgression
+Episode graph
+Episode definitions
+Stat definitions
+현재 committed ProgressionState
+Chapter 전용 변수 초기화
+```
+
+Chapter가 시작되면 해당 Chapter의 그래프와 상태가 준비된다.
+
+새 Chapter라면:
+
+```text
+Chapter definition
+→ Initial ProgressionState
+→ Chapter Enter
+```
+
+저장 상태에서 복원한다면:
+
+```text
+Chapter definition
+→ Restored ProgressionState
+→ Chapter Enter
+```
+
+이후 Chapter 안에서는 여러 Scene이 순서대로 실행된다.
+
+```text
+Chapter Enter
+
+→ Scene A
+→ Scene B
+→ Scene C
+
+→ Chapter Exit
+```
+
+Chapter의 생명주기는 **마지막 Scene이 정상적으로 Commit/Exit된 뒤** 끝난다.
+
+즉:
+
+```text
+마지막 Episode 완료
+→ 마지막 Scene Commit
+→ 마지막 Scene Exit
+→ Chapter Exit
+```
+
+이다.
+
+Chapter 자체는 Scene 내부에서 발생한 선택 하나하나를 즉시 확정하지 않는다.
+
+현재 Chapter의 확정 상태는 Scene Commit 결과를 받아 다음 Scene으로 넘겨가며 갱신된다.
+
+---
+
+## Scene
+
+Scene은 Progression에서 가장 중요한 **Commit / Replay 경계**.
+
+여러 Episode를 하나의 진행 단위로 묶어:
+
+```text
+어디까지는 아직 확정되지 않은 진행인가?
+어디서 저장 가능한 확정 상태가 만들어지는가?
+Rollback은 어디까지 같은 실행으로 취급하는가?
+```
+
+를 결정하는 수명 경계다.
+
+예를 들어:
+
+```text
+Scene A
+    Episode A1
+        ↓
+    Episode A2
+        ↓
+    Episode A3
+
+Scene B
+    Episode B1
+```
+
+라면 A1 → A2 → A3를 진행하는 동안 선택 결과는 아직 Scene A 내부의 pending 상태다.
+
+```text
+EntryState
+   +
+Scene 안에서 발생한 pending choices
+   =
+WorkingState
+```
+
+이때 `EntryState`는 바뀌지 않는다.
+
+Scene A를 빠져나가 Scene B로 이동할 때 비로소:
+
+```text
+WorkingState
+→ Commit
+→ 다음 Scene의 EntryState
+```
+
+가 된다.
+
+따라서 Scene은 다음 생명주기를 소유한다.
+
+```text
+Scene EntryState
+현재 Episode cursor
+pending choices
+watched Episode 기록
+restore path
+rollback 범위
+replay cursor
+Scene Commit 결과
+```
+
+정상적인 Scene 수명은 다음과 같다.
+
+```text
+Scene Enter
+
+→ Episode
+→ Episode
+→ Episode
+
+→ Scene Commit
+→ Scene Exit
+```
+
+하지만 Rollback은 Scene 종료가 아니다.
+
+```text
+Rollback
+→ 같은 Scene 유지
+→ target 이후 pending 제거
+→ Scene root부터 replay
+```
+
+따라서 Rollback에서는:
+
+```text
+Scene Commit X
+Scene Exit X
+Scene Enter X
+```
+
+다.
+
+Stop / New Game / Manual Load도 현재 Scene의 정상 완료가 아니므로 기존 Scene을 Commit하지 않는다.
+
+---
+
+## Episode
+
+Episode는 Scene 안에서 실행되는 **가장 작은 Progression 진행 단위**.
+
+Episode는 현재 진행 cursor가 가리키는 하나의 콘텐츠 노드다.
+
+대표적으로 다음 정보를 가진다.
+
+```text
+EpisodeId
+SceneId
+DialogueEntryId
+EventKey
+NextOptions
+```
+
+그리고 각 Option은 다음 Episode로 가는 간선 역할을 한다.
+
+```text
+Episode A
+   │
+   ├─ Option 0 → Episode B
+   │
+   └─ Option 1 → Episode C
+```
+
+Episode의 생명주기는 짧다.
+
+```text
+Episode Enter
+→ Dialogue playback
+→ Episode Exit
+→ 다음 진행 판정
+```
+
+같은 Scene 안의 Episode로 이동한다면 Scene은 그대로 유지된다.
+
+```text
+Episode A Exit
+→ Episode B Enter
+```
+
+다른 Scene의 Episode로 이동한다면 그 사이에 Scene 경계가 발생한다.
+
+```text
+Episode A Exit
+→ Scene Commit
+→ Scene Exit
+→ 다음 Scene Enter
+→ Episode B Enter
+```
+
+Episode 자체는 Save나 Commit 단위가 아니다.
+
+Episode Skip 역시 Episode playback을 빠르게 끝내는 Presentation 기능일 뿐, 그 자체로 Scene이나 Chapter의 진행 상태를 확정하지 않는다.
+
+---
+
+
+# 계층별 책임 요약
+
+| 계층           | 의미                   | 주로 소유하는 것                                              | 종료/교체 시점                  |
+| ------------ | -------------------- | ------------------------------------------------------ | ------------------------- |
+| **Scenario** | 한 회차 전체              | Backlog, 영구 상태, 앨범, 엔딩, 현재 Chapter                     | 새 게임/타이틀 종료/회차 종료         |
+| **Chapter**  | 하나의 진행 그래프           | Episode graph, Stat 정의, committed ProgressionState     | 마지막 Scene 완료              |
+| **Scene**    | Commit / Rollback 단위 | EntryState, pending choice, watched, replay/restore 상태 | 다른 Scene 이동 또는 Chapter 종료 |
+| **Episode**  | 최소 실행 노드             | DialogueEntryId, EventKey, 다음 간선                       | 현재 Episode playback 완료    |
+
+핵심적으로 기억할 것은 다음과 같다.
+
+```text
+Scenario
+= 무엇을 회차 전체에 남길 것인가
+
+Chapter
+= 어떤 진행 그래프와 상태 규칙을 사용할 것인가
+
+Scene
+= 어디까지를 하나의 미확정 진행으로 묶고 언제 확정할 것인가
+
+Episode
+= 지금 실제로 무엇을 실행하고 있는가
+```
+
+그리고 상태의 확정 관점에서는 다음처럼 볼 수 있다.
+
+```text
+Scenario
+└─ Chapter
+   └─ Scene EntryState
+      ├─ Episode
+      ├─ Episode
+      ├─ Episode
+      │
+      └─ pending 진행 누적
+             ↓
+          Scene Commit
+             ↓
+       다음 Scene EntryState
+```
+
+이 구조를 먼저 이해하면 이후의 `Rollback`, `Stop`, `Load`, `Skip`이 서로 다른 이유도 자연스럽게 설명된다.
+
+
+
+## 2. 네 종류의 통로
+
+| 종류 | 예 | Scene Commit | Scene 교체 | 의미 |
+| --- | --- | ---: | ---: | --- |
+| 정상 진행 | 다른 Scene 이동, Chapter 종료 | O | O 또는 종료 | Progression lifecycle |
+| Scene 내부 재생 | Rollback / Backlog jump | X | X | 같은 Scene replay |
+| 외부 실행 교체 | New Game / Manual Load / Title Exit | X | 기존 실행 폐기 | Host/session lifecycle |
+| 재생 편의 기능 | Episode Skip / Rapid Skip | X | X | Presentation-only |
+
+이 네 종류를 섞지 않는다.
+
+특히 `Load`, `Rollback`, `Stop`, `Skip`을 `SceneExitReason` 하나로 합치지 않는다.
+
+---
+
+## 3. 통로별 의미
+
+| 통로 | 현재 실행 | Chapter | Scene | Pending |
+| --- | --- | --- | --- | --- |
+| 정상 Scene 완료 | 유지 | 유지 | 교체 | Commit |
+| Chapter 완료 | 유지 | 종료 | 현재 Scene 종료 | Commit |
+| Rollback | playback 재시작 | 유지 | 유지 | target 이후 제거 |
+| Backlog jump | playback 재시작 | 유지 | 유지 | target 이후 제거 |
+| Stop / Title Exit | 종료 | 정상 Exit 아님 | 정상 Exit 아님 | Commit 금지 |
+| New Game | 기존 실행 Stop 후 새 실행 | 새 상태 | 새 Scene | 이전 pending 폐기 |
+| Continue | 실행이 없을 때 시작 | 저장 상태 복원 | 저장 Scene root | committed state 기준 |
+| Manual Load | 기존 실행 Stop 후 새 실행 | 저장 상태 복원 | 저장 Scene root | 기존 pending 폐기 |
+| Episode Skip | 유지 | 유지 | 유지 | 정상 진행과 동일 |
+
+---
+
+
+
 범용 게임 프레임워크를 만드는 것이 목적은 아니다. 대신 내부를 다음 세 층으로 분리한다.
 
 ```text
@@ -34,6 +485,8 @@ Backlog / RollbackHistory
 ```
 
 실제 게임인 `ked-presentation-runtime`은 마지막 Host 구현을 제공한다.
+
+
 
 ---
 
@@ -180,38 +633,6 @@ Chapter Exit
 - Rollback은 Scene을 종료하지 않는다.
 - Episode Skip은 Progression transition이 아니다.
 
----
-
-# 4. 네 종류의 통로
-
-| 종류 | 예 | Scene Commit | Scene 교체 | 의미 |
-| --- | --- | ---: | ---: | --- |
-| 정상 진행 | 다른 Scene 이동, Chapter 종료 | O | O 또는 종료 | Progression lifecycle |
-| Scene 내부 재생 | Rollback / Backlog jump | X | X | 같은 Scene replay |
-| 외부 실행 교체 | New Game / Manual Load / Title Exit | X | 기존 실행 폐기 | Host/session lifecycle |
-| 재생 편의 기능 | Episode Skip / Rapid Skip | X | X | Presentation-only |
-
-이 네 종류를 섞지 않는다.
-
-특히 `Load`, `Rollback`, `Stop`, `Skip`을 `SceneExitReason` 하나로 합치지 않는다.
-
----
-
-# 5. 통로별 의미
-
-| 통로 | 현재 실행 | Chapter | Scene | Pending |
-| --- | --- | --- | --- | --- |
-| 정상 Scene 완료 | 유지 | 유지 | 교체 | Commit |
-| Chapter 완료 | 유지 | 종료 | 현재 Scene 종료 | Commit |
-| Rollback | playback 재시작 | 유지 | 유지 | target 이후 제거 |
-| Backlog jump | playback 재시작 | 유지 | 유지 | target 이후 제거 |
-| Stop / Title Exit | 종료 | 정상 Exit 아님 | 정상 Exit 아님 | Commit 금지 |
-| New Game | 기존 실행 Stop 후 새 실행 | 새 상태 | 새 Scene | 이전 pending 폐기 |
-| Continue | 실행이 없을 때 시작 | 저장 상태 복원 | 저장 Scene root | committed state 기준 |
-| Manual Load | 기존 실행 Stop 후 새 실행 | 저장 상태 복원 | 저장 Scene root | 기존 pending 폐기 |
-| Episode Skip | 유지 | 유지 | 유지 | 정상 진행과 동일 |
-
----
 
 # 6. Runtime 실행 의미
 
