@@ -121,9 +121,9 @@ namespace Ked.Progression
             cancellationToken.ThrowIfCancellationRequested();
 
             _reporter.ReportSceneEntered(
-                scene.Chapter.ChapterId,
-                scene.SceneId,
-                scene.EntryState);
+                scene.Progression.Definition.ChapterId,
+                scene.Progression.SceneId,
+                scene.Progression.EntryState);
         }
 
         private async Task<SceneStepKind> RunEpisodeStepAsync(
@@ -134,8 +134,8 @@ namespace Ked.Progression
             EpisodeNode episode = progression.CurrentEpisode;
 
             _reporter.ReportEpisodeEntered(
-                scene.Chapter.ChapterId,
-                scene.SceneId,
+                scene.Progression.Definition.ChapterId,
+                scene.Progression.SceneId,
                 episode);
 
             await PlayNodeAsync(
@@ -149,8 +149,8 @@ namespace Ked.Progression
             progression.NoteCurrentEpisodeWatched(_rollbackHistory.LastHistoryIndex);
 
             _reporter.ReportEpisodeExited(
-                scene.Chapter.ChapterId,
-                scene.SceneId,
+                scene.Progression.Definition.ChapterId,
+                scene.Progression.SceneId,
                 episode);
 
             SceneChoiceResolution resolution;
@@ -212,7 +212,7 @@ namespace Ked.Progression
 
             progression.MoveTo(choice.Option.TargetEpisodeId);
 
-            if (!scene.Chapter.IsSameScene(choice.FromEpisodeId, progression.CurrentEpisodeId))
+            if (!scene.Progression.Definition.IsSameScene(choice.FromEpisodeId, progression.CurrentEpisodeId))
                 return SceneStepKind.SceneEnded;
 
             return SceneStepKind.Continue;
@@ -245,7 +245,7 @@ namespace Ked.Progression
 
             ChapterAdvance advance =
                 ChapterTransition.Resolve(
-                    scene.Chapter,
+                    scene.Progression.Definition,
                     progression.WorkingState);
 
             if (scene.ReplayPending)
@@ -381,15 +381,15 @@ namespace Ked.Progression
                 $"시청 {commitResult.WatchedEpisodeIds.Count}개 → {commitResult.State.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
-                scene.Chapter.ChapterId,
-                scene.SceneId,
+                scene.Progression.Definition.ChapterId,
+                scene.Progression.SceneId,
                 commitResult.Choices,
                 commitResult.WatchedEpisodeIds,
                 commitResult.State);
 
             _reporter.ReportSceneExited(
-                scene.Chapter.ChapterId,
-                scene.SceneId,
+                scene.Progression.Definition.ChapterId,
+                scene.Progression.SceneId,
                 commitResult.State);
 
             return new SceneRunResult(outcome, commitResult.State);

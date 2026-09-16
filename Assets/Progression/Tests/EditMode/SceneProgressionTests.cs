@@ -168,7 +168,7 @@ namespace Ked.Progression.Tests
         {
             ChapterAdvance advance =
                 ChapterTransition.Resolve(
-                    scene.Chapter,
+                    scene.Definition,
                     scene.WorkingState);
 
             scene.Advance(

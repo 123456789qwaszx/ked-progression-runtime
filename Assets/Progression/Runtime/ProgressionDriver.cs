@@ -29,7 +29,7 @@ namespace Ked.Progression
         public Task Completion => _runTask;
 
         public IReadOnlyList<CommittedChoice> PendingPath =>
-            _currentScene?.PendingPath ?? Array.Empty<CommittedChoice>();
+            _currentScene?.Progression.PendingPath ?? Array.Empty<CommittedChoice>();
 
         public ProgressionDriver(
             SceneRunner sceneRunner,
@@ -109,14 +109,12 @@ namespace Ked.Progression
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                SceneProgression progression = new(_chapter, _state);
                 IReadOnlyList<ScenePathStep> restorePath = _restorePath;
                 _restorePath = null;
-
-                var scene = new SceneTransaction(
-                    _chapter,
-                    _state,
-                    restorePath);
-
+                
+                SceneTransaction scene = new(progression, restorePath);
+                
                 _currentScene = scene;
 
                 try

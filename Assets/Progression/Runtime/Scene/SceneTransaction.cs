@@ -13,31 +13,14 @@ namespace Ked.Progression
 
         // null이면 일반 진입, 빈 목록도 유효한 restore 진입이다.
         public IReadOnlyList<ScenePathStep> RestorePath { get; }
-        
+
         public bool ReplayPending { get; private set; }
-
-        public ChapterDefinition Chapter => Progression.Chapter;
-        public ProgressionState EntryState => Progression.EntryState;
-        public string SceneId => Progression.SceneId;
-        public string RootEpisodeId => Progression.RootEpisodeId;
-        public string CurrentEpisodeId => Progression.CurrentEpisodeId;
-        public EpisodeNode RootEpisode => Progression.RootEpisode;
-        public EpisodeNode CurrentEpisode => Progression.CurrentEpisode;
-        public IReadOnlyList<CommittedChoice> PendingPath => Progression.PendingPath;
-
+        
         public SceneTransaction(
-            ChapterDefinition chapter,
-            ProgressionState entryState,
-            IReadOnlyList<ScenePathStep> restorePath = null)
-            : this(new SceneProgression(chapter, entryState), restorePath)
-        {
-        }
-
-        internal SceneTransaction(
             SceneProgression progression,
             IReadOnlyList<ScenePathStep> restorePath = null)
         {
-            Progression = progression ?? throw new ArgumentNullException(nameof(progression));
+            Progression = progression;
             RestorePath = restorePath;
         }
 
