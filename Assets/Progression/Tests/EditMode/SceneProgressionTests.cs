@@ -162,6 +162,45 @@ namespace Ked.Progression.Tests
             Assert.That(commit.WatchedEpisodeIds, Is.EqualTo(new[] { "a", "b" }));
         }
 
+        [Test]
+        public void Commit_excludes_watched_episode_without_event_key()
+        {
+            EpisodeOption aToB = EpisodeOption.Choice("A to B", "b");
+
+            var a = new EpisodeNode(
+                "a",
+                "A",
+                "dialogue_a",
+                new[] { aToB },
+                eventKey: "event_a",
+                sceneId: "scene-a");
+
+            var b = new EpisodeNode(
+                "b",
+                "B",
+                "dialogue_b",
+                Array.Empty<EpisodeOption>(),
+                eventKey: null,
+                sceneId: "scene-a");
+
+            var chapter = new ChapterDefinition(
+                "chapter",
+                "Chapter",
+                "a",
+                Array.Empty<StatDefinition>(),
+                new[] { a, b });
+
+            var scene = new SceneProgress(chapter, chapter.CreateEntryState());
+
+            scene.NoteCurrentEpisodeWatched(10);
+            AdvanceFirstOption(scene, rollbackAnchor: 10);
+            scene.NoteCurrentEpisodeWatched(20);
+
+            SceneCommitResult commit = scene.CreateCommitResult();
+
+            Assert.That(commit.WatchedEpisodeIds, Is.EqualTo(new[] { "a" }));
+        }
+
         private static void AdvanceFirstOption(
             SceneProgress scene,
             int rollbackAnchor)
