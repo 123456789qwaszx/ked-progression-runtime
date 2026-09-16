@@ -57,7 +57,7 @@ namespace Ked.Progression
                 await EnterSceneAsync(scene, cancellationToken);
 
                 ApplyRestorePath(scene, history);
-                scene.SetPhase(SceneRunPhase.LoadPlanApplied);
+                scene.SetPhase(SceneRunPhase.RestorePathApplied);
 
                 while (true)
                 {
@@ -130,6 +130,7 @@ namespace Ked.Progression
 
             _reporter.ReportSceneEntered(
                 scene.Chapter.ChapterId,
+                scene.RootEpisode.SceneId,
                 scene.EntryState);
 
             scene.SetPhase(SceneRunPhase.EntryReported);
@@ -147,6 +148,11 @@ namespace Ked.Progression
 
             scene.SetPhase(SceneRunPhase.EpisodePlaying);
 
+            _reporter.ReportEpisodeEntered(
+                scene.Chapter.ChapterId,
+                episode.SceneId,
+                episode);
+
             await PlayNodeAsync(
                 episode.DialogueEntryId,
                 "대사",
@@ -157,6 +163,12 @@ namespace Ked.Progression
 
             history.NoteWatched(episode, _rollbackHistory.LastHistoryIndex);
             scene.SetPhase(SceneRunPhase.EpisodeCompleted);
+
+            _reporter.ReportEpisodeExited(
+                scene.Chapter.ChapterId,
+                episode.SceneId,
+                episode);
+
             scene.SetPhase(SceneRunPhase.ChoiceResolving);
 
             SceneChoiceResolution resolution;
@@ -237,6 +249,10 @@ namespace Ked.Progression
             _log.Info($"[진행] {description} 시작 — \"{nodeName}\"");
 
             await _playback.PlayNodeAsync(nodeName);
+
+            // Stop/New Game/Manual Load처럼 run 자체를 폐기하는 요청이
+            // playback 대기를 깨운 직후 정상 progression으로 이어지지 않게 한다.
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         private async Task<SceneChoiceResolution> ResolveNextChoiceAsync(
@@ -434,17 +450,25 @@ namespace Ked.Progression
             List<string> watched =
                 history.CreateWatchedEpisodeIds();
 
+            string sceneId = scene.RootEpisode.SceneId;
+
             _log.Info(
                 $"[장면] 확정 — 선택 {choices.Count}개, " +
                 $"시청 {watched.Count}개 → {state.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
                 scene.Chapter.ChapterId,
+                sceneId,
                 choices,
                 watched,
                 state);
 
             scene.SetPhase(SceneRunPhase.SceneCommitted);
+
+            _reporter.ReportSceneExited(
+                scene.Chapter.ChapterId,
+                sceneId,
+                state);
 
             return new SceneRunResult(outcome, state);
         }

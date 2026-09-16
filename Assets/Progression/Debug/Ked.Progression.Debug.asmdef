@@ -1,0 +1,14 @@
+{
+  "name": "Ked.Progression.Debug",
+  "rootNamespace": "Ked.Progression.Debugging",
+  "references": ["Ked.Progression.Runtime"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
