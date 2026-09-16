@@ -16,7 +16,7 @@ namespace Ked.Progression
     {
         private readonly ScenePendingHistory _history = new();
 
-        public ChapterDefinition Chapter { get; }
+        public ChapterDefinition Definition { get; }
         public ProgressionState EntryState { get; }
 
         public string SceneId { get; }
@@ -27,7 +27,7 @@ namespace Ked.Progression
         public EpisodeNode CurrentEpisode => GetEpisode(CurrentEpisodeId);
 
         public ProgressionState WorkingState =>
-            _history.FoldInto(Chapter, EntryState);
+            _history.FoldInto(Definition, EntryState);
 
         public IReadOnlyList<CommittedChoice> PendingPath =>
             _history.CreatePendingPath();
@@ -36,13 +36,13 @@ namespace Ked.Progression
         public int RecordedChoiceCount => _history.RecordedChoiceCount;
 
         public SceneProgression(
-            ChapterDefinition chapter,
+            ChapterDefinition definition,
             ProgressionState entryState)
         {
-            Chapter = chapter;
+            Definition = definition;
             EntryState = entryState;
 
-            chapter.TryGetNode(entryState.CurrentEpisodeId, out EpisodeNode root);
+            definition.TryGetNode(entryState.CurrentEpisodeId, out EpisodeNode root);
             
             RootEpisodeId = root.EpisodeId;
             CurrentEpisodeId = root.EpisodeId;
@@ -78,7 +78,7 @@ namespace Ked.Progression
                 ScenePathStep step = path[i];
 
                 if (!string.Equals(step.FromEpisodeId, cursor, StringComparison.Ordinal) ||
-                    !Chapter.TryGetNode(cursor, out EpisodeNode episode) ||
+                    !Definition.TryGetNode(cursor, out EpisodeNode episode) ||
                     step.OptionIndex < 0 ||
                     step.OptionIndex >= episode.NextOptions.Count)
                 {
@@ -145,11 +145,11 @@ namespace Ked.Progression
 
         private EpisodeNode GetEpisode(string episodeId)
         {
-            if (Chapter.TryGetNode(episodeId, out EpisodeNode episode))
+            if (Definition.TryGetNode(episodeId, out EpisodeNode episode))
                 return episode;
 
             throw new InvalidOperationException(
-                $"에피소드 '{episodeId}'가 챕터 '{Chapter.ChapterId}'에 없다.");
+                $"에피소드 '{episodeId}'가 챕터 '{Definition.ChapterId}'에 없다.");
         }
         
         #region Test
