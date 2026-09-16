@@ -102,6 +102,89 @@ namespace Ked.Progression.Tests
             Assert.That(scene.IsCommitted, Is.False);
         }
 
+        [Test]
+        public void RestorePath_ReplaysRecordedChoices()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var scene = new SceneProgression(chapter, chapter.CreateEntryState());
+            var path = new[]
+            {
+                new ScenePathStep("a", 0),
+                new ScenePathStep("b", 0),
+            };
+
+            bool restored = scene.TryRestorePath(path);
+
+            Assert.That(restored, Is.True);
+            Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(scene.RecordedChoiceCount, Is.EqualTo(2));
+
+            SceneChoice first = scene.TakeRecordedChoice(10);
+            SceneChoice second = scene.TakeRecordedChoice(20);
+
+            Assert.That(first.Source, Is.EqualTo(SceneChoiceSource.Recorded));
+            Assert.That(first.FromEpisodeId, Is.EqualTo("a"));
+            Assert.That(second.Source, Is.EqualTo(SceneChoiceSource.Recorded));
+            Assert.That(second.FromEpisodeId, Is.EqualTo("b"));
+            Assert.That(scene.CurrentEpisodeId, Is.EqualTo("c"));
+            Assert.That(scene.HasRecordedChoice, Is.False);
+        }
+
+        [Test]
+        public void InvalidRestorePath_FallsBackToRoot()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var scene = new SceneProgression(chapter, chapter.CreateEntryState());
+            var path = new[]
+            {
+                new ScenePathStep("a", 0),
+                new ScenePathStep("wrong", 0),
+            };
+
+            bool restored = scene.TryRestorePath(path);
+
+            Assert.That(restored, Is.False);
+            Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(scene.HasRecordedChoice, Is.False);
+        }
+
+        [Test]
+        public void InvalidRestorePath_ClearsEntireRecordedPath()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var scene = new SceneProgression(chapter, chapter.CreateEntryState());
+            var path = new[]
+            {
+                new ScenePathStep("a", 0),
+                new ScenePathStep("b", 99),
+            };
+
+            bool restored = scene.TryRestorePath(path);
+
+            Assert.That(restored, Is.False);
+            Assert.That(scene.RecordedChoiceCount, Is.Zero);
+            Assert.That(scene.HasRecordedChoice, Is.False);
+            Assert.That(scene.CurrentEpisodeId, Is.EqualTo(scene.RootEpisodeId));
+        }
+
+        [Test]
+        public void RestorePath_DoesNotCommitScene()
+        {
+            ChapterProgression chapter = CreateChapter();
+            ProgressionState entry = chapter.CreateEntryState();
+            var scene = new SceneProgression(chapter, entry);
+
+            bool restored = scene.TryRestorePath(
+                new[] { new ScenePathStep("a", 0) });
+
+            Assert.That(restored, Is.True);
+            Assert.That(scene.IsCommitted, Is.False);
+            Assert.That(scene.EntryState, Is.SameAs(entry));
+            Assert.That(scene.EntryState.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("a"));
+        }
+
         private static ChapterProgression CreateChapter()
         {
             EpisodeOption aToB = EpisodeOption.Choice("A to B", "b");

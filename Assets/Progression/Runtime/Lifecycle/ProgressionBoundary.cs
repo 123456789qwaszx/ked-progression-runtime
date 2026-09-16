@@ -9,6 +9,12 @@ namespace Ked.Progression
         Restore = 1,
     }
 
+    public enum SceneEntryKind
+    {
+        Normal = 0,
+        Restore = 1,
+    }
+
     public readonly struct ChapterEnterContext
     {
         public ChapterProgression Chapter { get; }
@@ -41,10 +47,14 @@ namespace Ked.Progression
     public readonly struct SceneEnterContext
     {
         public SceneProgression Scene { get; }
+        public SceneEntryKind EntryKind { get; }
 
-        public SceneEnterContext(SceneProgression scene)
+        public SceneEnterContext(
+            SceneProgression scene,
+            SceneEntryKind entryKind = SceneEntryKind.Normal)
         {
             Scene = scene ?? throw new ArgumentNullException(nameof(scene));
+            EntryKind = entryKind;
         }
     }
 
@@ -89,8 +99,15 @@ namespace Ked.Progression
         }
     }
 
-    // 실제 게임 레포가 Chapter 경계에서 해야 할 일을 채운다.
-    // 예: Chapter Yarn 변수 초기화/복원, Chapter 단위 상태 준비 및 정리.
+    // ChapterSession이 initial/restored ProgressionState를 확정한 뒤,
+    // 첫 Scene을 만들기 전에 한 번 호출한다.
+    //
+    // 실제 게임 Host에서는 이 경계 안에서 Chapter 전용 Presentation 상태를 준비한다.
+    // behavioral reference 기준으로는 Chapter Yarn 변수 초기화(BeginChapter) 후
+    // Restore 진입이면 저장된 Yarn 변수를 복원한다.
+    //
+    // Backlog clear/restore는 Chapter 데이터가 아니라 Scenario/회차 수명이므로
+    // 이 인터페이스의 책임으로 끌어들이지 않는다.
     public interface IChapterBoundary
     {
         Task EnterAsync(ChapterEnterContext context);
