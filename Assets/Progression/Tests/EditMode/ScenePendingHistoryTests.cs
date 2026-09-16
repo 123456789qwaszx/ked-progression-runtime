@@ -35,7 +35,7 @@ namespace Ked.Progression.Tests
                 new SceneChoice(option, "ep-1", 0, SceneChoiceSource.User),
                 20);
 
-            history.RewindAfter(10);
+            history.TruncateAfter(10);
 
             Assert.That(history.RecordedChoiceCount, Is.EqualTo(0));
             Assert.That(history.PathCursor, Is.EqualTo(0));

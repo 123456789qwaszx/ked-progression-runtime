@@ -400,27 +400,27 @@ namespace Ked.Progression
         {
             scene.SetPhase(SceneRunPhase.SceneCommitting);
 
-            SceneCommitResult commit = progression.Commit();
+            SceneCommitResult commitResult = progression.CreateCommitResult();
 
             _log.Info(
-                $"[장면] 확정 — 선택 {commit.Choices.Count}개, " +
-                $"시청 {commit.WatchedEpisodeIds.Count}개 → {commit.State.CurrentEpisodeId}");
+                $"[장면] 확정 — 선택 {commitResult.Choices.Count}개, " +
+                $"시청 {commitResult.WatchedEpisodeIds.Count}개 → {commitResult.State.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
                 scene.Chapter.ChapterId,
                 scene.SceneId,
-                commit.Choices,
-                commit.WatchedEpisodeIds,
-                commit.State);
+                commitResult.Choices,
+                commitResult.WatchedEpisodeIds,
+                commitResult.State);
 
             scene.SetPhase(SceneRunPhase.SceneCommitted);
 
             _reporter.ReportSceneExited(
                 scene.Chapter.ChapterId,
                 scene.SceneId,
-                commit.State);
+                commitResult.State);
 
-            return new SceneRunResult(outcome, commit.State);
+            return new SceneRunResult(outcome, commitResult.State);
         }
     }
 }

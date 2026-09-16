@@ -15,7 +15,6 @@ namespace Ked.Progression
     public sealed class SceneProgression
     {
         private readonly ScenePendingHistory _history = new();
-        private bool _committed;
 
         public ChapterProgression Chapter { get; }
         public ProgressionState EntryState { get; }
@@ -33,7 +32,6 @@ namespace Ked.Progression
         public IReadOnlyList<CommittedChoice> PendingPath =>
             _history.CreatePendingPath();
 
-        public bool IsCommitted => _committed;
         public bool HasRecordedChoice => _history.HasRecordedChoice;
         public int RecordedChoiceCount => _history.RecordedChoiceCount;
 
@@ -41,91 +39,32 @@ namespace Ked.Progression
             ChapterProgression chapter,
             ProgressionState entryState)
         {
-            Chapter = chapter ?? throw new ArgumentNullException(nameof(chapter));
-            EntryState = entryState ?? throw new ArgumentNullException(nameof(entryState));
+            Chapter = chapter;
+            EntryState = entryState;
 
-            if (!chapter.TryGetNode(entryState.CurrentEpisodeId, out EpisodeNode root))
-            {
-                throw new ArgumentException(
-                    $"Scene 진입 에피소드 '{entryState.CurrentEpisodeId}'가 챕터 '{chapter.ChapterId}'에 없다.",
-                    nameof(entryState));
-            }
-
+            chapter.TryGetNode(entryState.CurrentEpisodeId, out EpisodeNode root);
+            
             RootEpisodeId = root.EpisodeId;
             CurrentEpisodeId = root.EpisodeId;
             SceneId = root.SceneId;
         }
 
-        public void NoteCurrentEpisodeWatched(int rollbackAnchor)
-        {
-            RequireOpen();
+        public void NoteCurrentEpisodeWatched(int rollbackAnchor) => 
             _history.NoteWatched(CurrentEpisode, rollbackAnchor);
-        }
-
+        
         // 실제로 선택된 간선을 pending history에 기록한다.
         // Via 재생 전에도 replay path를 보존해야 하므로 cursor 이동과 분리한다.
-        public void RecordChoice(SceneChoice choice, int rollbackAnchor)
-        {
-            RequireOpen();
-
-            if (!string.Equals(
-                    choice.FromEpisodeId,
-                    CurrentEpisodeId,
-                    StringComparison.Ordinal))
-            {
-                throw new ArgumentException(
-                    $"선택의 출발점 '{choice.FromEpisodeId}'가 현재 Episode '{CurrentEpisodeId}'와 다르다.",
-                    nameof(choice));
-            }
-
-            RequireCurrentOption(choice.Option, choice.SourceIndex);
+        public void RecordChoice(SceneChoice choice, int rollbackAnchor) =>
             _history.RecordChoice(choice, rollbackAnchor);
-        }
-
+        
         // playback/Via가 끝난 뒤 Runtime이 실제 Episode cursor를 이동시킨다.
-        public void MoveTo(string episodeId)
-        {
-            RequireOpen();
-
-            if (!Chapter.TryGetNode(episodeId, out _))
-            {
-                throw new ArgumentException(
-                    $"이동할 Episode '{episodeId}'가 챕터 '{Chapter.ChapterId}'에 없다.",
-                    nameof(episodeId));
-            }
-
-            CurrentEpisodeId = episodeId;
-        }
-
-        // Core 테스트나 단순 호출자를 위한 원자적 편의 API.
-        // Runtime SceneRunner는 Via 재생 순서를 보존하기 위해 RecordChoice/MoveTo를 나눠 사용한다.
-        public void Advance(
-            ResolvedOption selected,
-            SceneChoiceSource source,
-            int rollbackAnchor)
-        {
-            RequireOpen();
-
-            if (!selected.IsSelectable)
-                throw new ArgumentException("잠긴 선택지는 진행에 사용할 수 없다.", nameof(selected));
-
-            var choice = new SceneChoice(
-                selected.Option,
-                CurrentEpisodeId,
-                selected.SourceIndex,
-                source);
-
-            RecordChoice(choice, rollbackAnchor);
-            MoveTo(selected.Option.TargetEpisodeId);
-        }
-
-        // Host save의 progression path만 받아 현재 Chapter graph에 맞는지 검증하고
-        // root부터 다시 소비할 recorded choice로 적재한다.
-        // 하나라도 맞지 않으면 부분 경로를 남기지 않고 root 일반 진행으로 되돌린다.
+        public void MoveTo(string episodeId) => CurrentEpisodeId = episodeId;
+        
+        // 저장된 Scene 선택 경로가 현재 Chapter 그래프에서도 여전히 유효한지 검사하고,
+        // 유효하면 그 경로를 “root부터 다시 소비할 recorded choice로”으로 복원 및 적재
         public bool TryRestorePath(IReadOnlyList<ScenePathStep> path)
         {
-            RequireOpen();
-
+            // 버전 이슈로 복원경로와 현재 챕터 구조 불일치
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
 
@@ -162,8 +101,6 @@ namespace Ked.Progression
         // history cursor만 전진시키고 실제 Episode cursor 이동은 Runtime이 Via 처리 뒤 수행한다.
         public SceneChoice TakeRecordedChoice(int rollbackAnchor)
         {
-            RequireOpen();
-
             SceneChoice choice = _history.TakeRecordedChoice(rollbackAnchor);
 
             if (!string.Equals(CurrentEpisodeId, choice.FromEpisodeId, StringComparison.Ordinal))
@@ -172,58 +109,38 @@ namespace Ked.Progression
                     $"Recorded choice의 출발점 '{choice.FromEpisodeId}'가 현재 Episode '{CurrentEpisodeId}'와 다르다.");
             }
 
-            RequireCurrentOption(choice.Option, choice.SourceIndex);
             return choice;
         }
 
         public void DiscardUnconsumedChoices()
         {
-            RequireOpen();
             _history.DiscardUnconsumedChoices();
         }
 
+        // rollbackAnchor 이후의 pending 기록을 지운 다음,
+        // 그 결과에 맞춰 실제 Episode 커서를 다시 맞춘다
+        // Scene 진입점은 유지하면서 Scene 내부 진행만 되감는 것
         public void RewindAfter(int rollbackAnchor)
         {
-            RequireOpen();
-
-            _history.RewindAfter(rollbackAnchor);
+            _history.TruncateAfter(rollbackAnchor);
             CurrentEpisodeId = WorkingState.CurrentEpisodeId;
         }
 
         public void RestartReplay()
         {
-            RequireOpen();
-
             _history.RestartReplay();
             CurrentEpisodeId = RootEpisodeId;
         }
 
-        // 정상 Scene 완료에서 한 번만 호출한다.
-        // Core는 확정 결과를 계산할 뿐 save/report는 Runtime/Host가 처리한다.
-        public SceneCommitResult Commit()
+        // 정상 Scene 완료 시 Runtime이 확정에 사용할 결과를 만든다.
+        public SceneCommitResult CreateCommitResult()
         {
-            RequireOpen();
-
             var result = new SceneCommitResult(
                 WorkingState,
                 _history.CreateCommittedChoices(),
                 _history.CreateWatchedEpisodeIds());
 
-            _committed = true;
             return result;
-        }
-
-        private void RequireCurrentOption(EpisodeOption option, int sourceIndex)
-        {
-            IReadOnlyList<EpisodeOption> options = CurrentEpisode.NextOptions;
-
-            if (sourceIndex < 0 || sourceIndex >= options.Count ||
-                !ReferenceEquals(options[sourceIndex], option))
-            {
-                throw new ArgumentException(
-                    $"선택지가 현재 에피소드 '{CurrentEpisodeId}'의 간선이 아니다.",
-                    nameof(option));
-            }
         }
 
         private EpisodeNode GetEpisode(string episodeId)
@@ -234,11 +151,26 @@ namespace Ked.Progression
             throw new InvalidOperationException(
                 $"에피소드 '{episodeId}'가 챕터 '{Chapter.ChapterId}'에 없다.");
         }
-
-        private void RequireOpen()
+        
+        #region Test
+        
+        // Core 테스트나 단순 호출자를 위한 원자적 편의 API.
+        // Runtime SceneRunner는 Via 재생 순서를 보존하기 위해 RecordChoice/MoveTo를 나눠 사용한다.
+        public void Advance(ResolvedOption selected, SceneChoiceSource source, int rollbackAnchor)
         {
-            if (_committed)
-                throw new InvalidOperationException("이미 commit된 Scene은 변경할 수 없다.");
+            if (!selected.IsSelectable)
+                throw new ArgumentException("잠긴 선택지는 진행에 사용할 수 없다.", nameof(selected));
+
+            var choice = new SceneChoice(
+                selected.Option,
+                CurrentEpisodeId,
+                selected.SourceIndex,
+                source);
+
+            RecordChoice(choice, rollbackAnchor);
+            MoveTo(selected.Option.TargetEpisodeId);
         }
+        
+        #endregion
     }
 }
