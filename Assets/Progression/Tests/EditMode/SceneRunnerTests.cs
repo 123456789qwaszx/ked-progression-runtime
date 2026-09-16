@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 
@@ -93,6 +94,51 @@ namespace Ked.Progression.Tests
         }
 
         [Test]
+        public async Task RunAsync_ReplayKeepsSameSceneWithoutCommitOrExit()
+        {
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            var playback = new ReplayBlockingScenePlayback();
+            var reporter = new FakeProgressionReporter();
+
+            var runner = new SceneRunner(
+                playback,
+                new FakeOptionsView(),
+                new FakeSceneReplayState(),
+                new FakeRollbackHistory(),
+                reporter,
+                new FakeSceneBacklog());
+
+            var scene = new SceneTransaction(chapter, chapter.CreateEntryState());
+            using var cancellation = new CancellationTokenSource();
+
+            Task runTask = runner.RunAsync(scene, cancellation.Token);
+            await playback.FirstPlayStarted;
+
+            await runner.RequestReplayAsync(scene);
+            await playback.SecondPlayStarted;
+
+            Assert.That(scene.ReplayPending, Is.False);
+            Assert.That(scene.CurrentEpisodeId, Is.EqualTo(scene.RootEpisodeId));
+            Assert.That(reporter.SceneEnteredCount, Is.EqualTo(1));
+            Assert.That(reporter.SceneCommittedCount, Is.Zero);
+            Assert.That(reporter.SceneExitedCount, Is.Zero);
+            Assert.That(
+                reporter.Events,
+                Is.EqualTo(new[]
+                {
+                    "SceneEnter:scene-1",
+                    "EpisodeEnter:ep-1",
+                    "EpisodeEnter:ep-1",
+                }));
+
+            cancellation.Cancel();
+            await runner.StopAsync();
+
+            Assert.ThrowsAsync<OperationCanceledException>(
+                async () => await runTask);
+        }
+
+        [Test]
         public async Task Driver_NormalProgression_ReportsLifecycleInOrder()
         {
             ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
@@ -138,6 +184,38 @@ namespace Ked.Progression.Tests
                     "SceneExit:scene-2",
                     "ChapterExit:chapter",
                 }));
+        }
+
+        [Test]
+        public async Task Driver_RestorePath_IsConsumedOnlyByFirstScene()
+        {
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            var replayState = new FakeSceneReplayState();
+            var reporter = new FakeProgressionReporter();
+
+            var runner = new SceneRunner(
+                new FakeScenePlayback(),
+                new FakeOptionsView(),
+                replayState,
+                new FakeRollbackHistory(),
+                reporter,
+                new FakeSceneBacklog());
+
+            var driver = new ProgressionDriver(
+                runner,
+                new FakeChapterLifecycle(),
+                reporter);
+
+            driver.Start(
+                chapter,
+                chapter.CreateEntryState(),
+                new[] { new ScenePathStep("ep-1", 0) });
+
+            await driver.Completion;
+
+            Assert.That(replayState.BeginLoadReplayCount, Is.EqualTo(1));
+            Assert.That(reporter.SceneEnteredCount, Is.EqualTo(2));
+            Assert.That(reporter.SceneCommittedCount, Is.EqualTo(2));
         }
 
         [Test]
@@ -241,6 +319,37 @@ namespace Ked.Progression.Tests
         public override Task StopAsync()
         {
             _stopped.TrySetResult(true);
+            return Task.CompletedTask;
+        }
+    }
+
+    internal sealed class ReplayBlockingScenePlayback : FakeScenePlayback
+    {
+        private readonly TaskCompletionSource<bool> _firstStarted = new();
+        private readonly TaskCompletionSource<bool> _secondStarted = new();
+        private TaskCompletionSource<bool> _currentGate;
+        private int _playCount;
+
+        public Task FirstPlayStarted => _firstStarted.Task;
+        public Task SecondPlayStarted => _secondStarted.Task;
+
+        public override Task PlayNodeAsync(string nodeName)
+        {
+            PlayedNodes.Add(nodeName);
+            _playCount++;
+            _currentGate = new TaskCompletionSource<bool>();
+
+            if (_playCount == 1)
+                _firstStarted.TrySetResult(true);
+            else if (_playCount == 2)
+                _secondStarted.TrySetResult(true);
+
+            return _currentGate.Task;
+        }
+
+        public override Task StopAsync()
+        {
+            _currentGate?.TrySetResult(true);
             return Task.CompletedTask;
         }
     }
