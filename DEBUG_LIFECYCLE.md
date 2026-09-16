@@ -7,10 +7,18 @@
 1. Unity에서 프로젝트를 연다.
 2. `SampleScene`을 연다.
 3. Play를 누른다.
-4. `ProgressionDebugHost`가 자동으로 생성되고 왼쪽 위에 Debug 패널이 나타난다.
-5. Unity Console에서 `[LIFE]`, `[RUN]`, `[REPLAY]`, `[PRESENT]`, `[STATE]` 로그를 함께 본다.
+4. `ProgressionDebugBootstrap`이 자동 생성되고, Debug Host와 uGUI 패널을 조립한다.
+5. 화면 왼쪽 위의 버튼으로 진행을 제어하면서 Unity Console의 `[LIFE]`, `[RUN]`, `[REPLAY]`, `[PRESENT]`, `[STATE]` 로그를 함께 본다.
 
-Debug Host는 batch mode에서는 자동 생성되지 않는다.
+Debug Bootstrap은 batch mode에서는 자동 생성되지 않는다.
+
+### Debug UI 경계
+
+- `ProgressionDebugHost`: Progression contract와 테스트 상태만 소유한다. uGUI/버튼을 직접 알지 않는다.
+- `ProgressionDebugUIRoot`: 버튼, 상태 텍스트, 동적 Choice 표시만 담당한다.
+- `ProgressionDebugBindings`: View 이벤트와 Host command/state event를 연결한다.
+- `ProgressionDebugBootstrap`: Host, UI Root, EventSystem을 조립한다.
+- `UIBase<TRefs>` / `UIRoot<TRefs>` / `UIManager`: `UIPresentationFlow`의 View binding 방식을 디버그에 필요한 범위로 차용한다.
 
 ---
 

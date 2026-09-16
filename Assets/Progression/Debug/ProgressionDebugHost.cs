@@ -23,6 +23,7 @@ namespace Ked.Progression.Debugging
         private TaskCompletionSource<bool> _nodeGate;
         private TaskCompletionSource<int> _choiceGate;
         private IReadOnlyList<ResolvedOption> _currentOptions = Array.Empty<ResolvedOption>();
+        private int _hiddenChoiceCount;
 
         private ProgressionState _savedState;
         private int? _rollbackTarget;
@@ -35,19 +36,12 @@ namespace Ked.Progression.Debugging
         public bool IsSeekingActive { get; private set; }
         public int LastHistoryIndex { get; private set; }
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void Install()
-        {
-            if (Application.isBatchMode)
-                return;
+        public ProgressionDebugSnapshot CurrentSnapshot => CreateSnapshot();
+        public IReadOnlyList<ResolvedOption> CurrentOptions => _currentOptions;
+        public int HiddenChoiceCount => _hiddenChoiceCount;
 
-            if (FindFirstObjectByType<ProgressionDebugHost>() != null)
-                return;
-
-            var host = new GameObject("Progression Debug Host");
-            DontDestroyOnLoad(host);
-            host.AddComponent<ProgressionDebugHost>();
-        }
+        public event Action<ProgressionDebugSnapshot> StateChanged;
+        public event Action<IReadOnlyList<ResolvedOption>, int> ChoicesChanged;
 
         private void Awake()
         {
@@ -76,97 +70,67 @@ namespace Ked.Progression.Debugging
                 this);
 
             Info("[HOST] Progression Debug Host ready");
+            PublishState();
         }
 
-        private void OnGUI()
+        // ------------------------------------------------------------------
+        // UI commands
+        // ------------------------------------------------------------------
+
+        public void RequestNewGame() => Run(NewGameAsync);
+
+        public void RequestContinue() => Run(ContinueAsync);
+
+        public void RequestManualLoad() => Run(ManualLoadAsync);
+
+        public void RequestStop() => Run(StopAsync);
+
+        public void RequestCompleteNode()
         {
-            GUILayout.BeginArea(new Rect(16, 16, 390, 680), GUI.skin.box);
-
-            GUILayout.Label("Progression Runtime Debug");
-            GUILayout.Space(6);
-
-            GUILayout.Label("Session / Host lifecycle");
-            if (GUILayout.Button("New Game"))
-                Run(NewGameAsync);
-
-            if (GUILayout.Button("Continue"))
-                Run(ContinueAsync);
-
-            if (GUILayout.Button("Manual Load"))
-                Run(ManualLoadAsync);
-
-            if (GUILayout.Button("Stop / Title Exit"))
-                Run(StopAsync);
-
-            GUILayout.Space(8);
-            GUILayout.Label("Current playback");
-
-            if (GUILayout.Button("Complete Episode Node"))
-                CompleteCurrentNode("normal complete");
-
-            if (GUILayout.Button("Episode Skip"))
-            {
-                Info("[PRESENT] EPISODE SKIP REQUEST — progression cursor를 직접 바꾸지 않는다.");
-                CompleteCurrentNode("episode skip");
-            }
-
-            DrawChoiceButtons();
-
-            GUILayout.Space(8);
-            GUILayout.Label("Scene replay");
-
-            if (GUILayout.Button("Rollback 1 Step"))
-                Run(() => ReplayAsync(Math.Max(0, LastHistoryIndex - 1), "Rollback"));
-
-            if (GUILayout.Button("Backlog Jump 2 Steps"))
-                Run(() => ReplayAsync(Math.Max(0, LastHistoryIndex - 2), "Backlog Jump"));
-
-            GUILayout.Space(10);
-            GUILayout.Label("Current");
-            GUILayout.Label($"Running  : {_driver?.IsRunning == true}");
-            GUILayout.Label($"Chapter  : {_currentChapterId}");
-            GUILayout.Label($"Scene    : {_currentSceneId}");
-            GUILayout.Label($"Episode  : {_currentEpisodeId}");
-            GUILayout.Label($"Node     : {_currentNode}");
-            GUILayout.Label($"History  : {LastHistoryIndex}");
-            GUILayout.Label($"Pending  : {_driver?.PendingPath.Count ?? 0}");
-            GUILayout.Label($"Seeking  : {IsSeekingActive}");
-            GUILayout.Label($"Saved Ep : {_savedState?.CurrentEpisodeId ?? "-"}");
-
-            GUILayout.Space(8);
-            GUILayout.Label("Console tags");
-            GUILayout.Label("[LIFE] Chapter / Scene / Episode");
-            GUILayout.Label("[RUN]  start / cancel / stop");
-            GUILayout.Label("[REPLAY] rollback / backlog jump");
-            GUILayout.Label("[PRESENT] skip / playback");
-            GUILayout.Label("[STATE] commit result");
-
-            GUILayout.EndArea();
+            CompleteCurrentNode("normal complete");
         }
 
-        private void DrawChoiceButtons()
+        public void RequestEpisodeSkip()
+        {
+            Info("[PRESENT] EPISODE SKIP REQUEST — progression cursor를 직접 바꾸지 않는다.");
+            CompleteCurrentNode("episode skip");
+        }
+
+        public void RequestRollback()
+        {
+            Run(() => ReplayAsync(
+                Math.Max(0, LastHistoryIndex - 1),
+                "Rollback"));
+        }
+
+        public void RequestBacklogJump()
+        {
+            Run(() => ReplayAsync(
+                Math.Max(0, LastHistoryIndex - 2),
+                "Backlog Jump"));
+        }
+
+        public void SelectChoice(int index)
         {
             if (_choiceGate == null || _choiceGate.Task.IsCompleted)
-                return;
-
-            GUILayout.Space(6);
-            GUILayout.Label("Choice");
-
-            for (int i = 0; i < _currentOptions.Count; i++)
             {
-                ResolvedOption option = _currentOptions[i];
-                bool before = GUI.enabled;
-                GUI.enabled = option.IsSelectable;
-
-                string label = string.IsNullOrEmpty(option.Option.ChoiceLabel)
-                    ? $"Choice {i}"
-                    : $"{i}: {option.Option.ChoiceLabel}";
-
-                if (GUILayout.Button(label))
-                    _choiceGate.TrySetResult(i);
-
-                GUI.enabled = before;
+                Warning("[PRESENT] choice ignored — 열린 선택지가 없다.");
+                return;
             }
+
+            if ((uint)index >= (uint)_currentOptions.Count)
+            {
+                Warning($"[PRESENT] choice ignored — index={index}");
+                return;
+            }
+
+            if (!_currentOptions[index].IsSelectable)
+            {
+                Warning($"[PRESENT] choice ignored — index={index} is not selectable");
+                return;
+            }
+
+            _choiceGate.TrySetResult(index);
         }
 
         private async Task NewGameAsync()
@@ -178,6 +142,8 @@ namespace Ked.Progression.Debugging
             _driver.Start(
                 _chapter,
                 _chapter.CreateEntryState());
+
+            PublishState();
         }
 
         private Task ContinueAsync()
@@ -192,6 +158,7 @@ namespace Ked.Progression.Debugging
 
             ResetTransientPlaybackState();
             _driver.Start(_chapter, _savedState);
+            PublishState();
             return Task.CompletedTask;
         }
 
@@ -202,12 +169,14 @@ namespace Ked.Progression.Debugging
             ResetTransientPlaybackState();
 
             _driver.Start(_chapter, _savedState);
+            PublishState();
         }
 
         private async Task StopAsync()
         {
             Info("[HOST] TITLE EXIT / STOP REQUEST");
             await StopCurrentRunAsync();
+            PublishState();
         }
 
         private async Task StopCurrentRunAsync()
@@ -217,6 +186,7 @@ namespace Ked.Progression.Debugging
 
             await _driver.StopAsync();
             Info("[HOST] previous run discarded");
+            PublishState();
         }
 
         private async Task ReplayAsync(int target, string source)
@@ -229,6 +199,7 @@ namespace Ked.Progression.Debugging
 
             _rollbackTarget = target;
             IsSeekingActive = true;
+            PublishState();
 
             Info($"[REPLAY] {source.ToUpperInvariant()} target={target}");
             await _driver.RequestReplayAsync();
@@ -243,8 +214,12 @@ namespace Ked.Progression.Debugging
             _currentEpisodeId = "-";
             _currentNode = "-";
             _currentOptions = Array.Empty<ResolvedOption>();
+            _hiddenChoiceCount = 0;
             _nodeGate = null;
             _choiceGate = null;
+
+            PublishChoices();
+            PublishState();
         }
 
         private void CompleteCurrentNode(string source)
@@ -276,6 +251,30 @@ namespace Ked.Progression.Debugging
             }
         }
 
+        private ProgressionDebugSnapshot CreateSnapshot()
+        {
+            return new ProgressionDebugSnapshot(
+                _driver?.IsRunning == true,
+                _currentChapterId,
+                _currentSceneId,
+                _currentEpisodeId,
+                _currentNode,
+                LastHistoryIndex,
+                _driver?.PendingPath.Count ?? 0,
+                IsSeekingActive,
+                _savedState?.CurrentEpisodeId ?? "-");
+        }
+
+        private void PublishState()
+        {
+            StateChanged?.Invoke(CreateSnapshot());
+        }
+
+        private void PublishChoices()
+        {
+            ChoicesChanged?.Invoke(_currentOptions, _hiddenChoiceCount);
+        }
+
         // ------------------------------------------------------------------
         // IScenePlayback
         // ------------------------------------------------------------------
@@ -290,6 +289,7 @@ namespace Ked.Progression.Debugging
         {
             _currentNode = nodeName;
             _nodeGate = new TaskCompletionSource<bool>();
+            PublishState();
 
             Info($"[PRESENT] NODE START {nodeName}");
 
@@ -306,6 +306,7 @@ namespace Ked.Progression.Debugging
             }
 
             _currentNode = "-";
+            PublishState();
         }
 
         public Task PrepareReplayAsync()
@@ -333,7 +334,9 @@ namespace Ked.Progression.Debugging
             int hiddenCount)
         {
             _currentOptions = options;
+            _hiddenChoiceCount = hiddenCount;
             _choiceGate = new TaskCompletionSource<int>();
+            PublishChoices();
 
             Info($"[PRESENT] CHOICE OPEN visible={options.Count} hidden={hiddenCount}");
 
@@ -344,6 +347,9 @@ namespace Ked.Progression.Debugging
             finally
             {
                 _currentOptions = Array.Empty<ResolvedOption>();
+                _hiddenChoiceCount = 0;
+                _choiceGate = null;
+                PublishChoices();
             }
         }
 
@@ -359,12 +365,14 @@ namespace Ked.Progression.Debugging
         public void BeginLoadReplay()
         {
             IsSeekingActive = true;
+            PublishState();
             Info("[REPLAY] LOAD REPLAY BEGIN");
         }
 
         public void ClearSeek()
         {
             IsSeekingActive = false;
+            PublishState();
             Info("[REPLAY] SEEK COMPLETE / CLEAR");
         }
 
@@ -389,11 +397,13 @@ namespace Ked.Progression.Debugging
         public void ReportChapterEntered(string chapterId, ProgressionState state)
         {
             _currentChapterId = chapterId;
+            PublishState();
             Info($"[LIFE][CHAPTER] ENTER chapter={chapterId} episode={state.CurrentEpisodeId}");
         }
 
         public void ReportChapterExited(string chapterId, ProgressionState state)
         {
+            PublishState();
             Info($"[LIFE][CHAPTER] EXIT chapter={chapterId} episode={state.CurrentEpisodeId}");
         }
 
@@ -403,6 +413,7 @@ namespace Ked.Progression.Debugging
             ProgressionState entryState)
         {
             _currentSceneId = sceneId;
+            PublishState();
             Info($"[LIFE][SCENE] ENTER scene={sceneId} root={entryState.CurrentEpisodeId}");
         }
 
@@ -414,6 +425,7 @@ namespace Ked.Progression.Debugging
             ProgressionState state)
         {
             _savedState = state;
+            PublishState();
 
             Info(
                 $"[LIFE][SCENE] COMMIT scene={sceneId} " +
@@ -429,6 +441,7 @@ namespace Ked.Progression.Debugging
             string sceneId,
             ProgressionState committedState)
         {
+            PublishState();
             Info($"[LIFE][SCENE] EXIT scene={sceneId}");
         }
 
@@ -438,6 +451,7 @@ namespace Ked.Progression.Debugging
             EpisodeNode episode)
         {
             _currentEpisodeId = episode.EpisodeId;
+            PublishState();
             Info($"[LIFE][EPISODE] ENTER episode={episode.EpisodeId} scene={sceneId}");
         }
 
@@ -446,6 +460,7 @@ namespace Ked.Progression.Debugging
             string sceneId,
             EpisodeNode episode)
         {
+            PublishState();
             Info($"[LIFE][EPISODE] EXIT episode={episode.EpisodeId} scene={sceneId}");
         }
 
