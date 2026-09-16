@@ -17,7 +17,7 @@ namespace Ked.Progression.Debugging
         IChapterLifecycle,
         IProgressionLog
     {
-        private ChapterProgression _chapter;
+        private ChapterDefinition _chapter;
         private ProgressionDriver _driver;
 
         private TaskCompletionSource<bool> _nodeGate;
@@ -458,7 +458,7 @@ namespace Ked.Progression.Debugging
             Info("[BOUNDARY][SCENE] backlog scene marker");
         }
 
-        public void BeginChapter(ChapterProgression chapter)
+        public void BeginChapter(ChapterDefinition chapter)
         {
             Info($"[BOUNDARY][CHAPTER] prepare chapter={chapter.ChapterId}");
         }
@@ -482,7 +482,7 @@ namespace Ked.Progression.Debugging
             UnityEngine.Debug.LogError(message);
         }
 
-        private static ChapterProgression CreateDebugChapter()
+        private static ChapterDefinition CreateDebugChapter()
         {
             EpisodeOption a1ToA2 = EpisodeOption.Choice(
                 "Stay in Scene A",
@@ -532,7 +532,7 @@ namespace Ked.Progression.Debugging
                 "watch-b2",
                 "scene-b");
 
-            return new ChapterProgression(
+            return new ChapterDefinition(
                 "debug-chapter",
                 "Progression Debug Chapter",
                 "ep-a1",

@@ -8,7 +8,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void Rewind_removes_future_pending_choices()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             AdvanceFirstOption(scene, rollbackAnchor: 10);
@@ -28,7 +28,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void Rewind_removes_future_watched_events()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             scene.NoteCurrentEpisodeWatched(10);
@@ -48,7 +48,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void RestartReplay_resets_history_cursor_and_episode_cursor_to_root()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             AdvanceFirstOption(scene, rollbackAnchor: 10);
@@ -64,7 +64,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void Recorded_choices_are_consumed_from_root_and_runtime_moves_cursor_after_each_choice()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             AdvanceFirstOption(scene, rollbackAnchor: 10);
@@ -97,7 +97,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void RestorePath_replays_recorded_choices_from_scene_root()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             bool restored = scene.TryRestorePath(
@@ -124,7 +124,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void InvalidRestorePath_clears_entire_recorded_path_and_falls_back_to_root()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             bool restored = scene.TryRestorePath(
@@ -144,7 +144,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void Commit_projects_working_state_choices_and_watched_events()
         {
-            ChapterProgression chapter = CreateChapter();
+            ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             scene.NoteCurrentEpisodeWatched(10);
@@ -177,7 +177,7 @@ namespace Ked.Progression.Tests
                 rollbackAnchor);
         }
 
-        private static ChapterProgression CreateChapter()
+        private static ChapterDefinition CreateChapter()
         {
             EpisodeOption aToB = EpisodeOption.Choice("A to B", "b");
             EpisodeOption bToC = EpisodeOption.Choice("B to C", "c");
@@ -206,7 +206,7 @@ namespace Ked.Progression.Tests
                 eventKey: "event_c",
                 sceneId: "scene-a");
 
-            return new ChapterProgression(
+            return new ChapterDefinition(
                 "chapter",
                 "Chapter",
                 "a",

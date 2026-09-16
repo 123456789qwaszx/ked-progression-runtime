@@ -17,7 +17,7 @@ namespace Ked.Progression
         private readonly IProgressionReporter _reporter;
         private readonly IProgressionLog _log;
 
-        private ChapterProgression _chapter;
+        private ChapterDefinition _chapter;
         private ProgressionState _state;
         private IReadOnlyList<ScenePathStep> _restorePath;
 
@@ -37,14 +37,14 @@ namespace Ked.Progression
             IProgressionReporter reporter,
             IProgressionLog log = null)
         {
-            _sceneRunner = sceneRunner ?? throw new ArgumentNullException(nameof(sceneRunner));
-            _chapterLifecycle = chapterLifecycle ?? throw new ArgumentNullException(nameof(chapterLifecycle));
-            _reporter = reporter ?? throw new ArgumentNullException(nameof(reporter));
+            _sceneRunner = sceneRunner;
+            _chapterLifecycle = chapterLifecycle;
+            _reporter = reporter;
             _log = log ?? NullProgressionLog.Instance;
         }
 
         public void Start(
-            ChapterProgression chapter,
+            ChapterDefinition chapter,
             ProgressionState entryState,
             IReadOnlyList<ScenePathStep> restorePath = null)
         {
@@ -64,7 +64,7 @@ namespace Ked.Progression
         }
 
         private async Task RunAsync(
-            ChapterProgression chapter,
+            ChapterDefinition chapter,
             ProgressionState entryState,
             IReadOnlyList<ScenePathStep> restorePath)
         {
@@ -77,8 +77,6 @@ namespace Ked.Progression
 
             try
             {
-                _log.Info($"[RUN] START chapter={_chapter.ChapterId} episode={_state.CurrentEpisodeId}");
-
                 _chapterLifecycle.BeginChapter(_chapter);
                 _reporter.ReportChapterEntered(_chapter.ChapterId, _state);
 
@@ -86,12 +84,10 @@ namespace Ked.Progression
             }
             catch (OperationCanceledException)
                 when (cancellation.IsCancellationRequested)
-            {
-                _log.Info("[RUN] CANCELLED — 현재 Scene pending은 commit하지 않는다.");
+            { // _log.Info("[RUN] CANCELLED — 현재 Scene pending은 commit하지 않는다.");
             }
             catch (Exception error)
-            {
-                _log.Error($"[RUN] FAULTED\n{error}");
+            { // _log.Error($"[RUN] FAULTED\n{error}");
             }
             finally
             {

@@ -11,7 +11,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task RunAsync_ChoiceAcrossScene_CommitsEntryScene()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
             ProgressionState entry = chapter.CreateEntryState();
 
             var playback = new FakeScenePlayback();
@@ -46,7 +46,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task RunAsync_RestorePath_StartsPresentationReplayAfterPathValidation()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
             var replayState = new FakeSceneReplayState();
 
             var runner = new SceneRunner(
@@ -71,7 +71,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task RunAsync_InvalidRestorePath_DoesNotStartPresentationReplay()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
             var replayState = new FakeSceneReplayState();
 
             var runner = new SceneRunner(
@@ -96,7 +96,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task RunAsync_ReplayKeepsSameSceneWithoutCommitOrExit()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
             var playback = new ReplayBlockingScenePlayback();
             var reporter = new FakeProgressionReporter();
 
@@ -141,7 +141,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task Driver_NormalProgression_ReportsLifecycleInOrder()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
 
             var playback = new FakeScenePlayback();
             var reporter = new FakeProgressionReporter();
@@ -189,7 +189,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task Driver_RestorePath_IsConsumedOnlyByFirstScene()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
             var replayState = new FakeSceneReplayState();
             var reporter = new FakeProgressionReporter();
 
@@ -221,7 +221,7 @@ namespace Ked.Progression.Tests
         [Test]
         public async Task Driver_Stop_DoesNotCommitOrExitCurrentScene()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
             var playback = new BlockingScenePlayback();
             var reporter = new FakeProgressionReporter();
 
@@ -255,7 +255,7 @@ namespace Ked.Progression.Tests
 
     internal static class TestChapterFactory
     {
-        public static ChapterProgression CreateTwoSceneChapter()
+        public static ChapterDefinition CreateTwoSceneChapter()
         {
             EpisodeOption toSecond = EpisodeOption.Choice(
                 choiceLabel: "next",
@@ -277,7 +277,7 @@ namespace Ked.Progression.Tests
                 eventKey: string.Empty,
                 sceneId: "scene-2");
 
-            return new ChapterProgression(
+            return new ChapterDefinition(
                 "chapter",
                 "Chapter",
                 "ep-1",
@@ -474,7 +474,7 @@ namespace Ked.Progression.Tests
     {
         public int BeginCount { get; private set; }
 
-        public void BeginChapter(ChapterProgression chapter)
+        public void BeginChapter(ChapterDefinition chapter)
         {
             BeginCount++;
         }

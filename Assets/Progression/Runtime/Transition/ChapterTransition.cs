@@ -12,7 +12,7 @@ namespace Ked.Progression
         private static readonly ResolvedOption[] None = new ResolvedOption[0];
 
         public static ChapterAdvance Resolve(
-            ChapterProgression chapter,
+            ChapterDefinition chapter,
             ProgressionState state)
         {
             if (chapter == null) throw new ArgumentNullException(nameof(chapter));
