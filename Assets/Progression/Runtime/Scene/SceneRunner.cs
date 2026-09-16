@@ -44,23 +44,23 @@ namespace Ked.Progression
         }
 
         public async Task<SceneRunResult> RunAsync(
-            SceneRunContext scene,
+            SceneRunContext ctx,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            SceneProgression progression = scene.Progression;
+            SceneProgress progression = ctx.Progress;
 
             try
             {
-                await EnterSceneAsync(scene, cancellationToken);
+                await EnterSceneAsync(ctx, cancellationToken);
 
-                ApplyRestorePath(scene, progression);
+                ApplyRestorePath(ctx, progression);
 
                 while (true)
                 {
                     SceneStepKind step =
-                        await RunEpisodeStepAsync(scene, progression, cancellationToken);
+                        await RunEpisodeStepAsync(ctx, progression, cancellationToken);
 
                     switch (step)
                     {
@@ -68,14 +68,14 @@ namespace Ked.Progression
                             continue;
 
                         case SceneStepKind.Replay:
-                            await RestartReplayAsync(scene, progression, cancellationToken);
+                            await RestartReplayAsync(ctx, progression, cancellationToken);
                             continue;
 
                         case SceneStepKind.SceneEnded:
-                            return CommitScene(scene, progression, SceneRunOutcome.SceneEnded);
+                            return CommitScene(ctx, progression, SceneRunOutcome.SceneEnded);
 
                         case SceneStepKind.ChapterEnded:
-                            return CommitScene(scene, progression, SceneRunOutcome.ChapterEnded);
+                            return CommitScene(ctx, progression, SceneRunOutcome.ChapterEnded);
 
                         default:
                             throw new ArgumentOutOfRangeException(
@@ -112,7 +112,7 @@ namespace Ked.Progression
         }
 
         private async Task EnterSceneAsync(
-            SceneRunContext scene,
+            SceneRunContext ctx,
             CancellationToken cancellationToken)
         {
             await _playback.BeginSceneAsync();
@@ -121,21 +121,21 @@ namespace Ked.Progression
             cancellationToken.ThrowIfCancellationRequested();
 
             _reporter.ReportSceneEntered(
-                scene.Progression.Definition.ChapterId,
-                scene.Progression.SceneId,
-                scene.Progression.EntryState);
+                ctx.Progress.Definition.ChapterId,
+                ctx.Progress.SceneId,
+                ctx.Progress.EntryState);
         }
 
         private async Task<SceneStepKind> RunEpisodeStepAsync(
             SceneRunContext scene,
-            SceneProgression progression,
+            SceneProgress progression,
             CancellationToken cancellationToken)
         {
             EpisodeNode episode = progression.CurrentEpisode;
 
             _reporter.ReportEpisodeEntered(
-                scene.Progression.Definition.ChapterId,
-                scene.Progression.SceneId,
+                scene.Progress.Definition.ChapterId,
+                scene.Progress.SceneId,
                 episode);
 
             await PlayNodeAsync(
@@ -149,8 +149,8 @@ namespace Ked.Progression
             progression.NoteCurrentEpisodeWatched(_rollbackHistory.LastHistoryIndex);
 
             _reporter.ReportEpisodeExited(
-                scene.Progression.Definition.ChapterId,
-                scene.Progression.SceneId,
+                scene.Progress.Definition.ChapterId,
+                scene.Progress.SceneId,
                 episode);
 
             SceneChoiceResolution resolution;
@@ -212,7 +212,7 @@ namespace Ked.Progression
 
             progression.MoveTo(choice.Option.TargetEpisodeId);
 
-            if (!scene.Progression.Definition.IsSameScene(choice.FromEpisodeId, progression.CurrentEpisodeId))
+            if (!scene.Progress.Definition.IsSameScene(choice.FromEpisodeId, progression.CurrentEpisodeId))
                 return SceneStepKind.SceneEnded;
 
             return SceneStepKind.Continue;
@@ -236,7 +236,7 @@ namespace Ked.Progression
 
         private async Task<SceneChoiceResolution> ResolveNextChoiceAsync(
             SceneRunContext ctx,
-            SceneProgression progression,
+            SceneProgress progression,
             EpisodeNode episode,
             CancellationToken cancellationToken)
         {
@@ -245,7 +245,7 @@ namespace Ked.Progression
 
             ChapterAdvance advance =
                 ChapterTransition.Resolve(
-                    ctx.Progression.Definition,
+                    ctx.Progress.Definition,
                     progression.WorkingState);
 
             if (ctx.ReplayPending)
@@ -327,7 +327,7 @@ namespace Ked.Progression
 
         private async Task RestartReplayAsync(
             SceneRunContext ctx,
-            SceneProgression progression,
+            SceneProgress progression,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -349,7 +349,7 @@ namespace Ked.Progression
 
         private void ApplyRestorePath(
             SceneRunContext ctx,
-            SceneProgression progression)
+            SceneProgress progression)
         {
             IReadOnlyList<ScenePathStep> path = ctx.RestorePath;
 
@@ -372,7 +372,7 @@ namespace Ked.Progression
 
         private SceneRunResult CommitScene(
             SceneRunContext ctx,
-            SceneProgression progression,
+            SceneProgress progression,
             SceneRunOutcome outcome)
         {
             SceneCommitResult commitResult = progression.CreateCommitResult();
@@ -382,15 +382,15 @@ namespace Ked.Progression
                 $"시청 {commitResult.WatchedEpisodeIds.Count}개 → {commitResult.State.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
-                ctx.Progression.Definition.ChapterId,
-                ctx.Progression.SceneId,
+                ctx.Progress.Definition.ChapterId,
+                ctx.Progress.SceneId,
                 commitResult.Choices,
                 commitResult.WatchedEpisodeIds,
                 commitResult.State);
 
             _reporter.ReportSceneExited(
-                ctx.Progression.Definition.ChapterId,
-                ctx.Progression.SceneId,
+                ctx.Progress.Definition.ChapterId,
+                ctx.Progress.SceneId,
                 commitResult.State);
 
             return new SceneRunResult(outcome, commitResult.State);
