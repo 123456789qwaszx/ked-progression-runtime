@@ -12,7 +12,7 @@ namespace Ked.Progression
     // - 정상 Scene 완료에서만 Commit하여 다음 Scene의 EntryState를 만든다.
     //
     // 이 클래스는 playback, Task, Unity/Yarn lifecycle을 모른다.
-    public sealed class SceneProgression
+    public sealed class SceneProgress
     {
         private readonly ScenePendingHistory _history = new();
 
@@ -35,7 +35,7 @@ namespace Ked.Progression
         public bool HasRecordedChoice => _history.HasRecordedChoice;
         public int RecordedChoiceCount => _history.RecordedChoiceCount;
 
-        public SceneProgression(
+        public SceneProgress(
             ChapterDefinition definition,
             ProgressionState entryState)
         {

@@ -9,7 +9,7 @@ namespace Ked.Progression
     // Transaction은 실행 중에만 필요한 replay request/restore input만 소유한다.
     public sealed class SceneRunContext
     {
-        public SceneProgression Progression { get; }
+        public SceneProgress Progress { get; }
 
         // null이면 일반 진입, 빈 목록도 유효한 restore 진입이다.
         public IReadOnlyList<ScenePathStep> RestorePath { get; }
@@ -17,10 +17,10 @@ namespace Ked.Progression
         public bool ReplayPending { get; private set; }
         
         public SceneRunContext(
-            SceneProgression progression,
+            SceneProgress progression,
             IReadOnlyList<ScenePathStep> restorePath = null)
         {
-            Progression = progression;
+            Progress = progression;
             RestorePath = restorePath;
         }
 
