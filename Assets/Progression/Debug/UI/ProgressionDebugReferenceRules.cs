@@ -40,16 +40,16 @@ namespace Ked.Progression.Debugging.UI
                         "CONTINUE",
                         "[MATCH] execution guard\n  Target/Ref 모두 이미 실행 중이면 새 시작 금지",
                         "[MATCH] committed state\n  저장된 Chapter/Scene root의 확정 상태에서 시작",
-                        "[PRESENTATION-ONLY] restore payload\n  Ref는 Yarn variables + Backlog도 함께 복원",
-                        "[DIFF][HARNESS GAP] load path\n  Ref: SavedLoadPlan으로 root -> saved line replay\n  Target runtime: restorePath 계약 있음\n  현재 Debug Host: restorePath를 아직 전달하지 않음");
+                        "[MATCH] progression load path\n  Ref   : SavedLoadPlan.Path를 첫 Scene에서 소비\n  Target: ScenePathStep restorePath를 첫 Scene에서 소비\n  Debug : ep-b1 -> ep-b2 고정 fixture로 실제 경로 전달",
+                        "[PRESENTATION-ONLY] restore payload\n  Ref는 Yarn variables + Backlog + line target도 함께 복원");
 
                 case Transition.ManualLoad:
                     return Report(
                         "MANUAL LOAD",
                         "[MATCH] execution\n  현재 run Stop 후 선택한 저장 상태로 새 run Start",
                         "[MATCH] pending\n  중단된 현재 Scene pending은 commit하지 않고 폐기",
-                        "[PRESENTATION-ONLY] save boundary\n  slot/file/server/version 판정은 Progression 밖의 책임",
-                        "[DIFF][HARNESS GAP] load path\n  Ref는 SavedLoadPlan을 첫 Scene에서 소비\n  현재 Debug Host는 saved state만 전달");
+                        "[MATCH] progression load path\n  Ref   : SavedLoadPlan.Path를 첫 Scene에서 소비\n  Target: 같은 ScenePathStep restorePath 계약 사용\n  Debug : ep-b1 -> ep-b2 고정 fixture를 전달",
+                        "[PRESENTATION-ONLY] save boundary\n  slot/file/server/version, Yarn choice/line target은 Progression 밖의 책임");
 
                 case Transition.Stop:
                     return Report(
@@ -83,10 +83,10 @@ namespace Ked.Progression.Debugging.UI
                 case Transition.BacklogJump:
                     return Report(
                         "BACKLOG JUMP",
-                        "[MATCH] progression primitive\n  SceneRunner 관점에서는 Rollback과 같은 replay-to-target",
-                        "[MATCH] Scene / pending\n  Scene 유지, target 이후 기록 제거, root부터 재생",
-                        "[PRESENTATION-ONLY] target selection\n  어떤 backlog line을 target으로 고르는지는 UI/Presentation 책임",
-                        "[PRESENTATION-ONLY] replay prepare\n  checkpoint Restore + Stage Clear + Scope Start");
+                        "[MATCH] current Scene\n  현재 Scene의 backlog는 Rollback과 같은 replay-to-target\n  Scene/EntryState 유지, target 이후 pending/history 제거",
+                        "[OUTSIDE-PROGRESSION] previous Scene\n  완료된 과거 Scene은 replay가 아니라 Stop -> checkpoint 복원 -> 새 run/fork",
+                        "[HARNESS GAP] previous Scene fork\n  Target Runtime의 Stop/Start primitive는 있으나 Debug Host는 cross-Scene Save fork를 모델링하지 않음",
+                        "[PRESENTATION-ONLY] target selection / replay prepare\n  backlog line 해석, variable checkpoint, Stage/Scope 복원은 Runtime 밖의 책임");
 
                 default:
                     return Report("UNKNOWN", "비교 규칙 없음");
