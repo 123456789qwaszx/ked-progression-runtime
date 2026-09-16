@@ -92,7 +92,7 @@ namespace Ked.Progression
                 cursor = option.TargetEpisodeId;
             }
 
-            _history.RestartReplay();
+            _history.ResetRecordedChoiceCursor();
             CurrentEpisodeId = RootEpisodeId;
             return true;
         }
@@ -101,15 +101,7 @@ namespace Ked.Progression
         // history cursor만 전진시키고 실제 Episode cursor 이동은 Runtime이 Via 처리 뒤 수행한다.
         public SceneChoice TakeRecordedChoice(int rollbackAnchor)
         {
-            SceneChoice choice = _history.TakeRecordedChoice(rollbackAnchor);
-
-            if (!string.Equals(CurrentEpisodeId, choice.FromEpisodeId, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"Recorded choice의 출발점 '{choice.FromEpisodeId}'가 현재 Episode '{CurrentEpisodeId}'와 다르다.");
-            }
-
-            return choice;
+            return _history.TakeRecordedChoice(rollbackAnchor);
         }
 
         public void DiscardUnconsumedChoices()
@@ -128,7 +120,7 @@ namespace Ked.Progression
 
         public void RestartReplay()
         {
-            _history.RestartReplay();
+            _history.ResetRecordedChoiceCursor();
             CurrentEpisodeId = RootEpisodeId;
         }
 
