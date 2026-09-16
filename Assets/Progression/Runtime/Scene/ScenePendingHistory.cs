@@ -111,8 +111,8 @@ namespace Ked.Progression
 
         public void NoteWatched(EpisodeNode episode, int anchor)
         {
-            //if (string.IsNullOrEmpty(episode.EventKey))
-            //     return;
+            if (string.IsNullOrEmpty(episode.EventKey))
+                return;
 
             for (int i = 0; i < _watched.Count; i++)
             {
