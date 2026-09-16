@@ -34,12 +34,12 @@ namespace Ked.Progression
             ISceneBacklog backlog,
             IProgressionLog log = null)
         {
-            _playback = playback ?? throw new ArgumentNullException(nameof(playback));
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-            _replayState = replayState ?? throw new ArgumentNullException(nameof(replayState));
-            _rollbackHistory = rollbackHistory ?? throw new ArgumentNullException(nameof(rollbackHistory));
-            _reporter = reporter ?? throw new ArgumentNullException(nameof(reporter));
-            _backlog = backlog ?? throw new ArgumentNullException(nameof(backlog));
+            _playback = playback;
+            _options = options;
+            _replayState = replayState;
+            _rollbackHistory = rollbackHistory;
+            _reporter = reporter;
+            _backlog = backlog;
             _log = log ?? NullProgressionLog.Instance;
         }
 
@@ -47,9 +47,6 @@ namespace Ked.Progression
             SceneTransaction scene,
             CancellationToken cancellationToken)
         {
-            if (scene == null)
-                throw new ArgumentNullException(nameof(scene));
-
             cancellationToken.ThrowIfCancellationRequested();
 
             SceneProgression progression = scene.Progression;
@@ -59,7 +56,6 @@ namespace Ked.Progression
                 await EnterSceneAsync(scene, cancellationToken);
 
                 ApplyRestorePath(scene, progression);
-                scene.SetPhase(SceneRunPhase.RestorePathApplied);
 
                 while (true)
                 {
@@ -91,19 +87,17 @@ namespace Ked.Progression
             }
             catch (OperationCanceledException)
             {
-                scene.SetPhase(SceneRunPhase.Cancelled);
                 throw;
             }
             catch
             {
-                scene.SetPhase(SceneRunPhase.Faulted);
                 throw;
             }
         }
 
         public async Task RequestReplayAsync(SceneTransaction scene)
         {
-            if (scene == null || !scene.RequestReplay())
+            if (!scene.RequestReplay())
                 return;
 
             Task stopTask = _playback.StopAsync();
@@ -121,21 +115,15 @@ namespace Ked.Progression
             SceneTransaction scene,
             CancellationToken cancellationToken)
         {
-            scene.SetPhase(SceneRunPhase.SceneEntering);
-
             await _playback.BeginSceneAsync();
             _backlog.MarkSceneStart();
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            scene.SetPhase(SceneRunPhase.SceneEntered);
-
             _reporter.ReportSceneEntered(
                 scene.Chapter.ChapterId,
                 scene.SceneId,
                 scene.EntryState);
-
-            scene.SetPhase(SceneRunPhase.EntryReported);
         }
 
         private async Task<SceneStepKind> RunEpisodeStepAsync(
@@ -144,8 +132,6 @@ namespace Ked.Progression
             CancellationToken cancellationToken)
         {
             EpisodeNode episode = progression.CurrentEpisode;
-
-            scene.SetPhase(SceneRunPhase.EpisodePlaying);
 
             _reporter.ReportEpisodeEntered(
                 scene.Chapter.ChapterId,
@@ -161,14 +147,11 @@ namespace Ked.Progression
                 return SceneStepKind.Replay;
 
             progression.NoteCurrentEpisodeWatched(_rollbackHistory.LastHistoryIndex);
-            scene.SetPhase(SceneRunPhase.EpisodeCompleted);
 
             _reporter.ReportEpisodeExited(
                 scene.Chapter.ChapterId,
                 scene.SceneId,
                 episode);
-
-            scene.SetPhase(SceneRunPhase.ChoiceResolving);
 
             SceneChoiceResolution resolution;
 
@@ -216,12 +199,8 @@ namespace Ked.Progression
             if (choice.Source != SceneChoiceSource.Recorded)
                 progression.RecordChoice(choice, _rollbackHistory.LastHistoryIndex);
 
-            scene.SetPhase(SceneRunPhase.ChoiceResolved);
-
             if (choice.Option.HasVia)
             {
-                scene.SetPhase(SceneRunPhase.ViaPlaying);
-
                 await PlayNodeAsync(
                     choice.Option.ViaNodeId,
                     "연출",
@@ -232,7 +211,6 @@ namespace Ked.Progression
             }
 
             progression.MoveTo(choice.Option.TargetEpisodeId);
-            scene.SetPhase(SceneRunPhase.TargetMoved);
 
             if (!scene.Chapter.IsSameScene(choice.FromEpisodeId, progression.CurrentEpisodeId))
                 return SceneStepKind.SceneEnded;
@@ -352,8 +330,6 @@ namespace Ked.Progression
             SceneProgression progression,
             CancellationToken cancellationToken)
         {
-            scene.SetPhase(SceneRunPhase.Replaying);
-
             cancellationToken.ThrowIfCancellationRequested();
 
             await _playback.PrepareReplayAsync();
@@ -398,8 +374,6 @@ namespace Ked.Progression
             SceneProgression progression,
             SceneRunOutcome outcome)
         {
-            scene.SetPhase(SceneRunPhase.SceneCommitting);
-
             SceneCommitResult commitResult = progression.CreateCommitResult();
 
             _log.Info(
@@ -412,8 +386,6 @@ namespace Ked.Progression
                 commitResult.Choices,
                 commitResult.WatchedEpisodeIds,
                 commitResult.State);
-
-            scene.SetPhase(SceneRunPhase.SceneCommitted);
 
             _reporter.ReportSceneExited(
                 scene.Chapter.ChapterId,

@@ -16,7 +16,7 @@ namespace Ked.Progression
     {
         private readonly ScenePendingHistory _history = new();
 
-        public ChapterProgression Chapter { get; }
+        public ChapterDefinition Chapter { get; }
         public ProgressionState EntryState { get; }
 
         public string SceneId { get; }
@@ -36,7 +36,7 @@ namespace Ked.Progression
         public int RecordedChoiceCount => _history.RecordedChoiceCount;
 
         public SceneProgression(
-            ChapterProgression chapter,
+            ChapterDefinition chapter,
             ProgressionState entryState)
         {
             Chapter = chapter;
