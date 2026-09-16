@@ -80,7 +80,7 @@ namespace Ked.Progression
             _picks.RemoveRange(PathCursor, _picks.Count - PathCursor);
         }
 
-        public void RestartReplay()
+        public void ResetRecordedChoiceCursor()
         {
             PathCursor = 0;
         }

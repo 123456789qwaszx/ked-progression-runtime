@@ -32,10 +32,9 @@ namespace Ked.Progression
             ReplayPending = true;
             return true;
         }
-
-        internal void RestartFromRoot()
+        
+        internal void ClearReplayRequest()
         {
-            Progression.RestartReplay();
             ReplayPending = false;
         }
     }

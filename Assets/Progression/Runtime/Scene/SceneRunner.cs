@@ -235,20 +235,20 @@ namespace Ked.Progression
         }
 
         private async Task<SceneChoiceResolution> ResolveNextChoiceAsync(
-            SceneRunContext scene,
+            SceneRunContext ctx,
             SceneProgression progression,
             EpisodeNode episode,
             CancellationToken cancellationToken)
         {
-            if (scene.ReplayPending)
+            if (ctx.ReplayPending)
                 return SceneChoiceResolution.ReplayRequested();
 
             ChapterAdvance advance =
                 ChapterTransition.Resolve(
-                    scene.Progression.Definition,
+                    ctx.Progression.Definition,
                     progression.WorkingState);
 
-            if (scene.ReplayPending)
+            if (ctx.ReplayPending)
                 return SceneChoiceResolution.ReplayRequested();
 
             if (advance.Kind == ChapterAdvanceKind.ChapterEnded)
@@ -268,7 +268,7 @@ namespace Ked.Progression
                         SceneChoiceSource.AutoAdvance));
             }
 
-            if (scene.ReplayPending)
+            if (ctx.ReplayPending)
                 return SceneChoiceResolution.ReplayRequested();
 
             try
@@ -276,7 +276,7 @@ namespace Ked.Progression
                 ResolvedOption resolved =
                     await PickAsync(advance, cancellationToken);
 
-                if (scene.ReplayPending)
+                if (ctx.ReplayPending)
                     return SceneChoiceResolution.ReplayRequested();
 
                 return SceneChoiceResolution.FromChoice(
@@ -288,7 +288,7 @@ namespace Ked.Progression
             }
             catch (OperationCanceledException)
                 when (!cancellationToken.IsCancellationRequested &&
-                      scene.ReplayPending)
+                      ctx.ReplayPending)
             {
                 return SceneChoiceResolution.ReplayRequested();
             }
@@ -326,7 +326,7 @@ namespace Ked.Progression
         }
 
         private async Task RestartReplayAsync(
-            SceneRunContext scene,
+            SceneRunContext ctx,
             SceneProgression progression,
             CancellationToken cancellationToken)
         {
@@ -339,7 +339,8 @@ namespace Ked.Progression
             if (_rollbackHistory.TryTakeRollbackTarget(out int historyIndex))
                 progression.RewindAfter(historyIndex);
 
-            scene.RestartFromRoot();
+            progression.RestartReplay();
+            ctx.ClearReplayRequest();
 
             _log.Info(
                 $"[장면] 리플레이 — 루트부터. " +
@@ -347,10 +348,10 @@ namespace Ked.Progression
         }
 
         private void ApplyRestorePath(
-            SceneRunContext scene,
+            SceneRunContext ctx,
             SceneProgression progression)
         {
-            IReadOnlyList<ScenePathStep> path = scene.RestorePath;
+            IReadOnlyList<ScenePathStep> path = ctx.RestorePath;
 
             // null은 일반 진입. 빈 path는 유효한 restore 진입이다.
             if (path == null)
@@ -370,7 +371,7 @@ namespace Ked.Progression
         }
 
         private SceneRunResult CommitScene(
-            SceneRunContext scene,
+            SceneRunContext ctx,
             SceneProgression progression,
             SceneRunOutcome outcome)
         {
@@ -381,15 +382,15 @@ namespace Ked.Progression
                 $"시청 {commitResult.WatchedEpisodeIds.Count}개 → {commitResult.State.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
-                scene.Progression.Definition.ChapterId,
-                scene.Progression.SceneId,
+                ctx.Progression.Definition.ChapterId,
+                ctx.Progression.SceneId,
                 commitResult.Choices,
                 commitResult.WatchedEpisodeIds,
                 commitResult.State);
 
             _reporter.ReportSceneExited(
-                scene.Progression.Definition.ChapterId,
-                scene.Progression.SceneId,
+                ctx.Progression.Definition.ChapterId,
+                ctx.Progression.SceneId,
                 commitResult.State);
 
             return new SceneRunResult(outcome, commitResult.State);
