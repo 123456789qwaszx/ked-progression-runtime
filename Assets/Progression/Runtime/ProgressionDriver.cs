@@ -21,7 +21,7 @@ namespace Ked.Progression
         private ProgressionState _state;
         private IReadOnlyList<ScenePathStep> _restorePath;
 
-        private SceneTransaction _currentScene;
+        private SceneRunContext _currentScene;
         private CancellationTokenSource _runCancellation;
         private Task _runTask = Task.CompletedTask;
 
@@ -113,7 +113,7 @@ namespace Ked.Progression
                 IReadOnlyList<ScenePathStep> restorePath = _restorePath;
                 _restorePath = null;
                 
-                SceneTransaction scene = new(progression, restorePath);
+                SceneRunContext scene = new(progression, restorePath);
                 
                 _currentScene = scene;
 
@@ -152,7 +152,7 @@ namespace Ked.Progression
 
         public Task RequestReplayAsync()
         {
-            SceneTransaction scene = _currentScene;
+            SceneRunContext scene = _currentScene;
 
             if (scene == null)
                 return Task.CompletedTask;

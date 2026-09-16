@@ -44,7 +44,7 @@ namespace Ked.Progression
         }
 
         public async Task<SceneRunResult> RunAsync(
-            SceneTransaction scene,
+            SceneRunContext scene,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -95,7 +95,7 @@ namespace Ked.Progression
             }
         }
 
-        public async Task RequestReplayAsync(SceneTransaction scene)
+        public async Task RequestReplayAsync(SceneRunContext scene)
         {
             if (!scene.RequestReplay())
                 return;
@@ -112,7 +112,7 @@ namespace Ked.Progression
         }
 
         private async Task EnterSceneAsync(
-            SceneTransaction scene,
+            SceneRunContext scene,
             CancellationToken cancellationToken)
         {
             await _playback.BeginSceneAsync();
@@ -127,7 +127,7 @@ namespace Ked.Progression
         }
 
         private async Task<SceneStepKind> RunEpisodeStepAsync(
-            SceneTransaction scene,
+            SceneRunContext scene,
             SceneProgression progression,
             CancellationToken cancellationToken)
         {
@@ -235,7 +235,7 @@ namespace Ked.Progression
         }
 
         private async Task<SceneChoiceResolution> ResolveNextChoiceAsync(
-            SceneTransaction scene,
+            SceneRunContext scene,
             SceneProgression progression,
             EpisodeNode episode,
             CancellationToken cancellationToken)
@@ -326,7 +326,7 @@ namespace Ked.Progression
         }
 
         private async Task RestartReplayAsync(
-            SceneTransaction scene,
+            SceneRunContext scene,
             SceneProgression progression,
             CancellationToken cancellationToken)
         {
@@ -347,7 +347,7 @@ namespace Ked.Progression
         }
 
         private void ApplyRestorePath(
-            SceneTransaction scene,
+            SceneRunContext scene,
             SceneProgression progression)
         {
             IReadOnlyList<ScenePathStep> path = scene.RestorePath;
@@ -370,7 +370,7 @@ namespace Ked.Progression
         }
 
         private SceneRunResult CommitScene(
-            SceneTransaction scene,
+            SceneRunContext scene,
             SceneProgression progression,
             SceneRunOutcome outcome)
         {
