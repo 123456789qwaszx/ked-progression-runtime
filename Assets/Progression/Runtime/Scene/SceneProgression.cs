@@ -27,6 +27,8 @@ namespace Ked.Progression
             _history.FoldInto(Chapter, EntryState);
 
         public bool IsCommitted => _committed;
+        public bool HasRecordedChoice => _history.HasRecordedChoice;
+        public int RecordedChoiceCount => _history.RecordedChoiceCount;
 
         public SceneProgression(
             ChapterProgression chapter,
@@ -72,6 +74,59 @@ namespace Ked.Progression
                 rollbackAnchor);
 
             CurrentEpisodeId = selected.Option.TargetEpisodeId;
+        }
+
+        // Load 시점에 저장된 progression 경로를 미리 적재한다.
+        // 실제 replay에서는 TakeRecordedChoice()로 root부터 하나씩 다시 소비한다.
+        public void RestoreChoice(
+            EpisodeOption option,
+            string fromEpisodeId,
+            int sourceIndex)
+        {
+            RequireOpen();
+
+            if (option == null)
+                throw new ArgumentNullException(nameof(option));
+
+            if (!Chapter.TryGetNode(fromEpisodeId, out EpisodeNode episode))
+                throw new ArgumentException(
+                    $"저장된 선택의 출발 Episode '{fromEpisodeId}'가 현재 Chapter에 없다.",
+                    nameof(fromEpisodeId));
+
+            IReadOnlyList<EpisodeOption> options = episode.NextOptions;
+
+            if (sourceIndex < 0 || sourceIndex >= options.Count ||
+                !ReferenceEquals(options[sourceIndex], option))
+            {
+                throw new ArgumentException(
+                    $"저장된 선택이 Episode '{fromEpisodeId}'의 간선이 아니다.",
+                    nameof(option));
+            }
+
+            _history.RestoreChoice(option, fromEpisodeId, sourceIndex);
+        }
+
+        // Replay 중 저장된 progression 선택을 하나 소비한다.
+        public SceneChoice TakeRecordedChoice(int rollbackAnchor)
+        {
+            RequireOpen();
+
+            SceneChoice choice = _history.TakeRecordedChoice(rollbackAnchor);
+
+            if (!string.Equals(CurrentEpisodeId, choice.FromEpisodeId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Recorded choice의 출발점 '{choice.FromEpisodeId}'가 현재 Episode '{CurrentEpisodeId}'와 다르다.");
+            }
+
+            CurrentEpisodeId = choice.Option.TargetEpisodeId;
+            return choice;
+        }
+
+        public void DiscardUnconsumedChoices()
+        {
+            RequireOpen();
+            _history.DiscardUnconsumedChoices();
         }
 
         public void RewindAfter(int rollbackAnchor)

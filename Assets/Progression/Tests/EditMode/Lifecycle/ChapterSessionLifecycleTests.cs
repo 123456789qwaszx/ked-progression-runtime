@@ -48,6 +48,50 @@ namespace Ked.Progression.Tests
         }
 
         [Test]
+        public async Task Replay_keeps_same_scene_without_scene_exit_or_reenter()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var recorder = new BoundaryRecorder();
+            var boundaries = new ProgressionBoundaries(recorder, recorder, recorder);
+            var session = new ChapterSession(chapter, boundaries);
+
+            await session.EnterAsync();
+
+            ChapterAdvance first = await session.CompleteCurrentEpisodeAsync();
+            await session.AdvanceAsync(
+                first.Options[0],
+                SceneChoiceSource.User,
+                rollbackAnchor: 10);
+
+            await session.CompleteCurrentEpisodeAsync();
+
+            SceneProgression sceneBeforeReplay = session.Scene;
+            ProgressionState chapterStateBeforeReplay = session.State;
+
+            await session.ReplayAsync(rollbackAnchor: 10);
+
+            Assert.That(session.Scene, Is.SameAs(sceneBeforeReplay));
+            Assert.That(session.State, Is.SameAs(chapterStateBeforeReplay));
+            Assert.That(session.Scene.IsCommitted, Is.False);
+            Assert.That(session.Scene.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(session.Scene.HasRecordedChoice, Is.True);
+            Assert.That(session.IsWaitingForAdvance, Is.False);
+
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    "Chapter.Enter:chapter",
+                    "Scene.Enter:scene-a",
+                    "Episode.Enter:a",
+                    "Episode.Exit:a",
+                    "Episode.Enter:b",
+                    "Episode.Exit:b",
+                    "Episode.Enter:a",
+                },
+                recorder.Events);
+        }
+
+        [Test]
         public void Scene_keeps_entry_state_until_commit()
         {
             ChapterProgression chapter = CreateChapter();
