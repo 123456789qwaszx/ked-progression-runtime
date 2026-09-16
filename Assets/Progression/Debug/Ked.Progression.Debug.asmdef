@@ -1,7 +1,11 @@
 {
   "name": "Ked.Progression.Debug",
   "rootNamespace": "Ked.Progression.Debugging",
-  "references": ["Ked.Progression.Runtime"],
+  "references": [
+    "Ked.Progression.Runtime",
+    "UnityEngine.UI",
+    "Unity.InputSystem"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
