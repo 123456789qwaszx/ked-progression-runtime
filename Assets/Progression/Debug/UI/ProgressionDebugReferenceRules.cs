@@ -1,11 +1,78 @@
+using System.Collections.Generic;
+
 namespace Ked.Progression.Debugging.UI
 {
+    public enum ProgressionDebugParityStatus
+    {
+        Match,
+        Diff,
+        OutsideProgression,
+        ProgressionOnly,
+    }
+
+    public enum ProgressionDebugParityEvidence
+    {
+        Verified,
+        HarnessGap,
+        CharacterizationNeeded,
+    }
+
+    public enum ProgressionDebugParityOwner
+    {
+        Progression,
+        Presentation,
+        Save,
+        Host,
+        UI,
+    }
+
+    public readonly struct ProgressionDebugComparisonRow
+    {
+        public string Topic { get; }
+        public ProgressionDebugParityStatus Status { get; }
+        public ProgressionDebugParityEvidence Evidence { get; }
+        public ProgressionDebugParityOwner Owner { get; }
+        public string Target { get; }
+        public string Reference { get; }
+
+        public ProgressionDebugComparisonRow(
+            string topic,
+            ProgressionDebugParityStatus status,
+            ProgressionDebugParityEvidence evidence,
+            ProgressionDebugParityOwner owner,
+            string target,
+            string reference)
+        {
+            Topic = topic;
+            Status = status;
+            Evidence = evidence;
+            Owner = owner;
+            Target = target;
+            Reference = reference;
+        }
+    }
+
+    public sealed class ProgressionDebugComparisonReport
+    {
+        public string Title { get; }
+        public string ReferenceSource { get; }
+        public IReadOnlyList<ProgressionDebugComparisonRow> Rows { get; }
+
+        public ProgressionDebugComparisonReport(
+            string title,
+            string referenceSource,
+            IReadOnlyList<ProgressionDebugComparisonRow> rows)
+        {
+            Title = title;
+            ReferenceSource = referenceSource;
+            Rows = rows;
+        }
+    }
+
     // ked-presentation-runtime/refactor/offline-local-save의 전환 규칙을
-    // Progression Debug 화면에서 비교하기 위한 읽기 전용 명세.
-    //
-    // 실제 PresentationSession/Stage/Yarn 객체를 흉내 내는 상태가 아니다.
-    // Target의 실제 실행 결과는 ProgressionDebugSnapshot으로 보고,
-    // 이 클래스는 Reference에서 같은 사용자 동작이 어떤 경계를 거치는지만 설명한다.
+    // typed comparison report로 제공하는 Debug 전용 불변 명세.
+    // Target의 실제 실행값은 ProgressionDebugSnapshot이 소유하고,
+    // 이 클래스는 Reference와 비교할 의미/책임/검증 수준만 기술한다.
     public static class ProgressionDebugReferenceRules
     {
         public const string Reference =
@@ -24,93 +91,233 @@ namespace Ked.Progression.Debugging.UI
             BacklogPreviousScene,
         }
 
-        public static string Describe(Transition transition)
+        public static ProgressionDebugComparisonReport CreateReport(
+            Transition transition)
         {
             switch (transition)
             {
                 case Transition.NewGame:
                     return Report(
                         "NEW GAME",
-                        "[MATCH] execution\n  Target: 현재 run Stop 후 새 run Start\n  Ref   : TransitionAsync = Stop -> change -> Launch",
-                        "[MATCH] chapter / scene\n  Target: Chapter entry state + root Scene\n  Ref   : resume 미채택 시 StartChapter.CreateEntryState()",
-                        "[MATCH] pending\n  기존 Scene pending은 취소되며 commit하지 않음",
-                        "[PRESENTATION-ONLY] BeginScene\n  Variable checkpoint Capture\n  Yarn ChoiceHistory Clear\n  Stage Clear / Scope Start\n  PresentationSession flags Reset");
+                        Match(
+                            "execution",
+                            "current run Stop → initial entry state로 새 run Start",
+                            "TransitionAsync = Stop → change → Launch"),
+                        Match(
+                            "pending",
+                            "버린 Scene pending을 commit하지 않음",
+                            "기존 run 폐기 시 pending commit 없음"),
+                        Outside(
+                            "scene presentation reset",
+                            ProgressionDebugParityOwner.Presentation,
+                            "Progression Runtime 밖에서 준비",
+                            "checkpoint capture / Stage clear / Scope start / session flags reset"));
 
                 case Transition.Continue:
                     return Report(
                         "CONTINUE",
-                        "[MATCH] execution guard\n  Target/Ref 모두 이미 실행 중이면 새 시작 금지",
-                        "[MATCH] committed state\n  저장된 Chapter/Scene root의 확정 상태에서 시작",
-                        "[MATCH] progression load path\n  Ref   : SavedLoadPlan.Path를 첫 Scene에서 소비\n  Target: ScenePathStep restorePath를 첫 Scene에서 소비\n  Debug : ep-b1 -> ep-b2 고정 fixture로 실제 경로 전달",
-                        "[PRESENTATION-ONLY] restore payload\n  Ref는 Yarn variables + Backlog + line target도 함께 복원");
+                        Match(
+                            "execution guard",
+                            "이미 실행 중이면 새 Continue 시작 금지",
+                            "Reference도 running guard 적용"),
+                        Match(
+                            "committed checkpoint",
+                            "저장된 Scene root state에서 시작",
+                            "resume의 Scene root checkpoint에서 시작"),
+                        Match(
+                            "progression load path",
+                            "ScenePathStep restorePath를 첫 Scene에서 1회 소비",
+                            "SavedLoadPlan.Path를 첫 Scene에서 1회 소비"),
+                        Outside(
+                            "presentation restore payload",
+                            ProgressionDebugParityOwner.Presentation,
+                            "path validation 성공 후 Host replay state 시작",
+                            "Yarn variables / Backlog / Yarn choices / line target 복원"));
 
                 case Transition.ManualLoad:
                     return Report(
                         "MANUAL LOAD",
-                        "[MATCH] execution\n  현재 run Stop 후 선택한 저장 상태로 새 run Start",
-                        "[MATCH] pending\n  중단된 현재 Scene pending은 commit하지 않고 폐기",
-                        "[MATCH] progression load path\n  Ref   : SavedLoadPlan.Path를 첫 Scene에서 소비\n  Target: 같은 ScenePathStep restorePath 계약 사용\n  Debug : ep-b1 -> ep-b2 고정 fixture를 전달",
-                        "[PRESENTATION-ONLY] save boundary\n  slot/file/server/version, Yarn choice/line target은 Progression 밖의 책임");
+                        Match(
+                            "execution",
+                            "current run Stop → selected checkpoint로 새 run Start",
+                            "TransitionAsync 후 선택 slot 기준 새 실행"),
+                        Match(
+                            "pending",
+                            "중단된 Scene pending 폐기",
+                            "기존 Scene pending commit 없음"),
+                        Match(
+                            "progression load path",
+                            "ScenePathStep restorePath 계약 사용",
+                            "SavedLoadPlan.Path 사용"),
+                        Outside(
+                            "save boundary",
+                            ProgressionDebugParityOwner.Save,
+                            "고정 fixture만 Host에서 준비",
+                            "slot/file/server/version/Playthrough fork 처리"));
 
                 case Transition.Stop:
                     return Report(
                         "STOP / TITLE EXIT",
-                        "[MATCH] execution\n  현재 run cancellation 후 idle",
-                        "[MATCH] COMMIT FORBIDDEN\n  정상 SceneEnded/ChapterEnded가 아니므로 pending commit 없음",
-                        "[PRESENTATION-ONLY] playback cleanup\n  EpisodeSkip Cancel / node Stop / line Abort\n  Rollback points + shot response Clear\n  PresentationScope End");
+                        MatchCharacterization(
+                            "execution",
+                            "run cancellation + playback/options stop",
+                            "current playback/session stop"),
+                        MatchCharacterization(
+                            "commit forbidden",
+                            "Stop 이후 Scene Commit/Exit 없음",
+                            "외부 중단은 pending을 확정/보고하지 않는 계약"),
+                        Outside(
+                            "playback cleanup",
+                            ProgressionDebugParityOwner.Presentation,
+                            "Runtime은 playback.Stop / option.Cancel contract만 호출",
+                            "EpisodeSkip cancel / line abort / rollback point / scope cleanup"));
 
                 case Transition.CompleteNode:
                     return Report(
                         "NORMAL NODE COMPLETE",
-                        "[MATCH] playback\n  node 완료 뒤 정상 progression 경로를 계속 진행",
-                        "[MATCH] commit boundary\n  node 완료 자체는 Scene commit이 아님\n  Scene/Chapter 경계를 실제로 넘을 때만 commit",
-                        "[PRESENTATION-ONLY] Episode playback 종료\n  Reference는 one-shot EpisodeSkip 상태도 CompleteEpisode()로 종료");
+                        Match(
+                            "playback",
+                            "node 완료 후 정상 progression 계속",
+                            "node 완료 후 정상 SceneRunner 경로 계속"),
+                        Match(
+                            "commit boundary",
+                            "node 완료 자체는 commit이 아님",
+                            "Scene/Chapter 경계를 넘을 때만 commit"),
+                        Outside(
+                            "episode playback lifecycle",
+                            ProgressionDebugParityOwner.Presentation,
+                            "IScenePlayback 완료만 관측",
+                            "EpisodeSkip one-shot 상태도 CompleteEpisode로 종료"));
 
                 case Transition.EpisodeSkip:
                     return Report(
                         "EPISODE SKIP",
-                        "[MATCH] progression cursor\n  Skip이 CurrentEpisodeId를 직접 바꾸지 않음",
-                        "[MATCH] progression semantics\n  현재 node playback만 완료시키고 이후는 정상 진행과 동일",
-                        "[PRESENTATION-ONLY] Reference\n  EpisodeSkipController는 playback 수명에 속하며 node 종료 시 CompleteEpisode()");
+                        Match(
+                            "progression cursor",
+                            "Skip이 CurrentEpisodeId를 직접 변경하지 않음",
+                            "Reference도 playback을 완료시킨 뒤 정상 progression 사용"),
+                        Outside(
+                            "skip controller",
+                            ProgressionDebugParityOwner.Presentation,
+                            "Debug Host가 현재 node gate만 완료",
+                            "EpisodeSkipController가 playback lifetime 소유"));
 
                 case Transition.Rollback:
                     return Report(
                         "ROLLBACK",
-                        "[MATCH] Scene\n  현재 Scene/EntryState 유지, root부터 playback 재시작",
-                        "[MATCH] pending\n  rollback target 뒤의 pending/history 제거 후 기록 경로 재사용",
-                        "[MATCH] commit\n  replay 자체는 Scene commit이 아님",
-                        "[PRESENTATION-ONLY] replay prepare\n  Yarn variable checkpoint Restore\n  Stage Clear / Scope Start");
+                        Match(
+                            "Scene identity",
+                            "현재 Scene / EntryState 유지",
+                            "동일 Scene checkpoint 유지"),
+                        Match(
+                            "pending rewind",
+                            "target 이후 choice/watched 제거 후 root replay",
+                            "rollback target 이후 history 제거 후 root replay"),
+                        Match(
+                            "commit",
+                            "replay 자체는 commit하지 않음",
+                            "Reference도 replay branch와 commit branch 분리"),
+                        Outside(
+                            "presentation replay prepare",
+                            ProgressionDebugParityOwner.Presentation,
+                            "PrepareReplayAsync contract만 호출",
+                            "variable checkpoint restore / Stage clear / Scope start"));
 
                 case Transition.BacklogJump:
                     return Report(
                         "BACKLOG / CURRENT SCENE",
-                        "[MATCH] progression primitive\n  현재 Scene의 backlog는 Rollback과 같은 replay-to-target",
-                        "[MATCH] Scene / pending\n  Scene/EntryState 유지, target 이후 pending/history 제거, root부터 재생",
-                        "[PRESENTATION-ONLY] target selection\n  어떤 backlog line을 rollback anchor로 바꿀지는 UI/Presentation 책임",
-                        "[PRESENTATION-ONLY] replay prepare\n  variable checkpoint, Stage/Scope 복원은 Runtime 밖의 책임");
+                        Match(
+                            "progression primitive",
+                            "Rollback과 같은 Replay(target)",
+                            "현재 Scene backlog도 same-Scene replay"),
+                        Match(
+                            "Scene / pending",
+                            "Scene 유지 + target 이후 history 제거",
+                            "동일 Scene 유지 + target 이후 기록 제거"),
+                        Outside(
+                            "target selection",
+                            ProgressionDebugParityOwner.UI,
+                            "Debug에서는 history index fixture 사용",
+                            "backlog line을 rollback anchor로 해석"));
 
                 case Transition.BacklogPreviousScene:
                     return Report(
                         "BACKLOG / PREVIOUS SCENE",
-                        "[OUTSIDE-PROGRESSION] fork orchestration\n  Ref: 현재 run Stop -> 과거 SceneCheckpoint/기록 선택 -> 새 Playthrough -> Launch",
-                        "[MATCH] Runtime primitive\n  Target Runtime은 새 API 없이 Stop + Start(historical checkpoint, optional restorePath) 사용",
-                        "[MATCH] Debug Host fixture\n  Scene B에서 버튼을 누르면 현재 run 폐기 -> Scene A root(ep-a1) + ep-a1->ep-a2 path로 새 run",
-                        "[MATCH] pending boundary\n  버린 current Scene pending은 commit하지 않고, historical fixture에서 새 Scene pending을 시작",
-                        "[SAVE/PRESENTATION-ONLY] 실제 프로젝트\n  SceneRecord/Backlog 상속, 새 PlaythroughId, line target/Yarn choices/Stage 복원은 Runtime 밖의 책임");
+                        Outside(
+                            "fork orchestration",
+                            ProgressionDebugParityOwner.Save,
+                            "Host fixture가 historical checkpoint/path를 준비",
+                            "SaveCoordinator가 SceneCheckpoint/records 선택 + 새 Playthrough 생성"),
+                        Match(
+                            "Runtime primitive",
+                            "Stop → Start(ep-a1 checkpoint, ep-a1→ep-a2 restorePath)",
+                            "current run Stop → historical Scene checkpoint로 Launch"),
+                        Match(
+                            "pending boundary",
+                            "버린 current Scene pending commit 없음",
+                            "fork 전 current Scene은 정상 완료가 아니므로 commit 없음"),
+                        Outside(
+                            "historical presentation payload",
+                            ProgressionDebugParityOwner.Presentation,
+                            "Progression path까지만 fixture로 전달",
+                            "Backlog/Yarn choices/line target/Stage restore"));
 
                 default:
-                    return Report("UNKNOWN", "비교 규칙 없음");
+                    return Report("UNKNOWN");
             }
         }
 
-        private static string Report(string title, params string[] rows)
+        private static ProgressionDebugComparisonReport Report(
+            string title,
+            params ProgressionDebugComparisonRow[] rows)
         {
-            return
-                "Reference parity\n" +
-                Reference + "\n\n" +
-                title + "\n" +
-                "--------------------------------\n" +
-                string.Join("\n\n", rows);
+            return new ProgressionDebugComparisonReport(
+                title,
+                Reference,
+                rows);
+        }
+
+        private static ProgressionDebugComparisonRow Match(
+            string topic,
+            string target,
+            string reference)
+        {
+            return new ProgressionDebugComparisonRow(
+                topic,
+                ProgressionDebugParityStatus.Match,
+                ProgressionDebugParityEvidence.Verified,
+                ProgressionDebugParityOwner.Progression,
+                target,
+                reference);
+        }
+
+        private static ProgressionDebugComparisonRow MatchCharacterization(
+            string topic,
+            string target,
+            string reference)
+        {
+            return new ProgressionDebugComparisonRow(
+                topic,
+                ProgressionDebugParityStatus.Match,
+                ProgressionDebugParityEvidence.CharacterizationNeeded,
+                ProgressionDebugParityOwner.Progression,
+                target,
+                reference);
+        }
+
+        private static ProgressionDebugComparisonRow Outside(
+            string topic,
+            ProgressionDebugParityOwner owner,
+            string target,
+            string reference)
+        {
+            return new ProgressionDebugComparisonRow(
+                topic,
+                ProgressionDebugParityStatus.OutsideProgression,
+                ProgressionDebugParityEvidence.Verified,
+                owner,
+                target,
+                reference);
         }
     }
 }

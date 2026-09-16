@@ -40,10 +40,7 @@ namespace Ked.Progression.Debugging.UI
             _host.ChoicesChanged += HandleChoicesChanged;
 
             _view.SetState(_host.CurrentSnapshot);
-            _view.SetTransitionReport(
-                "Reference parity\n" +
-                ProgressionDebugReferenceRules.Reference +
-                "\n\n버튼을 누르면 Target의 실제 상태와 Reference 규칙의 차이를 여기에 표시한다.");
+            _view.SetTransitionReport(null);
 
             HandleChoicesChanged(
                 _host.CurrentOptions,
@@ -129,7 +126,7 @@ namespace Ked.Progression.Debugging.UI
         private void Show(ProgressionDebugReferenceRules.Transition transition)
         {
             _view.SetTransitionReport(
-                ProgressionDebugReferenceRules.Describe(transition));
+                ProgressionDebugReferenceRules.CreateReport(transition));
         }
 
         private void HandleChoicesChanged(

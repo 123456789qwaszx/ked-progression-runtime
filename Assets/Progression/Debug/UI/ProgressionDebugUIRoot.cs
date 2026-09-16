@@ -116,10 +116,46 @@ namespace Ked.Progression.Debugging.UI
                 "실제 ProgressionDriver / SceneRunner 실행값";
         }
 
-        public void SetTransitionReport(string report)
+        public void SetTransitionReport(ProgressionDebugComparisonReport report)
         {
-            if (_transition != null)
-                _transition.text = report ?? string.Empty;
+            if (_transition == null)
+                return;
+
+            if (report == null)
+            {
+                _transition.text =
+                    "Reference parity\n" +
+                    ProgressionDebugReferenceRules.Reference +
+                    "\n\n버튼을 누르면 typed parity row를 표시한다.\n" +
+                    "Snapshot = Target 실제값 / Rules = Reference 불변 계약";
+                return;
+            }
+
+            var lines = new List<string>
+            {
+                "Reference parity",
+                report.ReferenceSource,
+                string.Empty,
+                report.Title,
+                "--------------------------------",
+            };
+
+            for (int i = 0; i < report.Rows.Count; i++)
+            {
+                ProgressionDebugComparisonRow row = report.Rows[i];
+
+                lines.Add(
+                    $"[{StatusLabel(row.Status)}]" +
+                    $"[{EvidenceLabel(row.Evidence)}]" +
+                    $"[{OwnerLabel(row.Owner)}] {row.Topic}");
+                lines.Add($"  Target: {row.Target}");
+                lines.Add($"  Ref   : {row.Reference}");
+
+                if (i + 1 < report.Rows.Count)
+                    lines.Add(string.Empty);
+            }
+
+            _transition.text = string.Join("\n", lines.ToArray());
         }
 
         public void SetChoices(
@@ -214,6 +250,43 @@ namespace Ked.Progression.Debugging.UI
             }
 
             _choiceItems.Clear();
+        }
+
+        private static string StatusLabel(ProgressionDebugParityStatus status)
+        {
+            switch (status)
+            {
+                case ProgressionDebugParityStatus.Match:
+                    return "MATCH";
+                case ProgressionDebugParityStatus.Diff:
+                    return "DIFF";
+                case ProgressionDebugParityStatus.OutsideProgression:
+                    return "OUTSIDE-PROGRESSION";
+                case ProgressionDebugParityStatus.ProgressionOnly:
+                    return "PROGRESSION-ONLY";
+                default:
+                    return status.ToString().ToUpperInvariant();
+            }
+        }
+
+        private static string EvidenceLabel(ProgressionDebugParityEvidence evidence)
+        {
+            switch (evidence)
+            {
+                case ProgressionDebugParityEvidence.Verified:
+                    return "VERIFIED";
+                case ProgressionDebugParityEvidence.HarnessGap:
+                    return "HARNESS-GAP";
+                case ProgressionDebugParityEvidence.CharacterizationNeeded:
+                    return "CHARACTERIZATION";
+                default:
+                    return evidence.ToString().ToUpperInvariant();
+            }
+        }
+
+        private static string OwnerLabel(ProgressionDebugParityOwner owner)
+        {
+            return owner.ToString().ToUpperInvariant();
         }
 
         private void HandleNewGameClicked(PointerEventData _) =>
