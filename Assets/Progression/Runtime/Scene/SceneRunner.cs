@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 namespace Ked.Progression
 {
+    // Scene 실행 순서를 소유하는 유일한 Runtime runner.
+    // 진행 상태 계산은 SceneProgression에 위임하고 playback/replay/lifecycle 순서만 조립한다.
     public sealed class SceneRunner
     {
         private enum SceneStepKind
@@ -50,19 +52,19 @@ namespace Ked.Progression
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            ScenePendingHistory history = scene.History;
+            SceneProgression progression = scene.Progression;
 
             try
             {
                 await EnterSceneAsync(scene, cancellationToken);
 
-                ApplyRestorePath(scene, history);
+                ApplyRestorePath(scene, progression);
                 scene.SetPhase(SceneRunPhase.RestorePathApplied);
 
                 while (true)
                 {
                     SceneStepKind step =
-                        await RunEpisodeStepAsync(scene, history, cancellationToken);
+                        await RunEpisodeStepAsync(scene, progression, cancellationToken);
 
                     switch (step)
                     {
@@ -70,14 +72,14 @@ namespace Ked.Progression
                             continue;
 
                         case SceneStepKind.Replay:
-                            await RestartReplayAsync(scene, history, cancellationToken);
+                            await RestartReplayAsync(scene, progression, cancellationToken);
                             continue;
 
                         case SceneStepKind.SceneEnded:
-                            return CommitScene(scene, history, SceneRunOutcome.SceneEnded);
+                            return CommitScene(scene, progression, SceneRunOutcome.SceneEnded);
 
                         case SceneStepKind.ChapterEnded:
-                            return CommitScene(scene, history, SceneRunOutcome.ChapterEnded);
+                            return CommitScene(scene, progression, SceneRunOutcome.ChapterEnded);
 
                         default:
                             throw new ArgumentOutOfRangeException(
@@ -130,7 +132,7 @@ namespace Ked.Progression
 
             _reporter.ReportSceneEntered(
                 scene.Chapter.ChapterId,
-                scene.RootEpisode.SceneId,
+                scene.SceneId,
                 scene.EntryState);
 
             scene.SetPhase(SceneRunPhase.EntryReported);
@@ -138,19 +140,16 @@ namespace Ked.Progression
 
         private async Task<SceneStepKind> RunEpisodeStepAsync(
             SceneTransaction scene,
-            ScenePendingHistory history,
+            SceneProgression progression,
             CancellationToken cancellationToken)
         {
-            EpisodeNode episode = scene.CurrentEpisode;
-
-            if (episode == null)
-                throw new InvalidOperationException($"에피소드 '{scene.CurrentEpisodeId}'를 찾을 수 없다.");
+            EpisodeNode episode = progression.CurrentEpisode;
 
             scene.SetPhase(SceneRunPhase.EpisodePlaying);
 
             _reporter.ReportEpisodeEntered(
                 scene.Chapter.ChapterId,
-                episode.SceneId,
+                scene.SceneId,
                 episode);
 
             await PlayNodeAsync(
@@ -161,29 +160,29 @@ namespace Ked.Progression
             if (scene.ReplayPending)
                 return SceneStepKind.Replay;
 
-            history.NoteWatched(episode, _rollbackHistory.LastHistoryIndex);
+            progression.NoteCurrentEpisodeWatched(_rollbackHistory.LastHistoryIndex);
             scene.SetPhase(SceneRunPhase.EpisodeCompleted);
 
             _reporter.ReportEpisodeExited(
                 scene.Chapter.ChapterId,
-                episode.SceneId,
+                scene.SceneId,
                 episode);
 
             scene.SetPhase(SceneRunPhase.ChoiceResolving);
 
             SceneChoiceResolution resolution;
 
-            if (history.HasRecordedChoice && _replayState.IsSeekingActive)
+            if (progression.HasRecordedChoice && _replayState.IsSeekingActive)
             {
                 SceneChoice recorded =
-                    history.TakeRecordedChoice(_rollbackHistory.LastHistoryIndex);
+                    progression.TakeRecordedChoice(_rollbackHistory.LastHistoryIndex);
 
                 resolution = SceneChoiceResolution.FromChoice(recorded);
             }
             else
             {
-                if (history.HasRecordedChoice)
-                    history.DiscardUnconsumedChoices();
+                if (progression.HasRecordedChoice)
+                    progression.DiscardUnconsumedChoices();
 
                 if (_replayState.IsSeekingActive)
                 {
@@ -196,13 +195,13 @@ namespace Ked.Progression
                 resolution =
                     await ResolveNextChoiceAsync(
                         scene,
-                        history,
+                        progression,
                         episode,
                         cancellationToken);
             }
 
-            if (scene.ReplayPending
-                || resolution.Kind == SceneChoiceResolutionKind.ReplayRequested)
+            if (scene.ReplayPending ||
+                resolution.Kind == SceneChoiceResolutionKind.ReplayRequested)
             {
                 return SceneStepKind.Replay;
             }
@@ -212,8 +211,10 @@ namespace Ked.Progression
 
             SceneChoice choice = resolution.Choice;
 
+            // Via 도중 replay가 걸려도 이미 고른 경로를 다시 따라갈 수 있어야 하므로
+            // 새 선택은 Via 재생 전에 pending history에 기록한다.
             if (choice.Source != SceneChoiceSource.Recorded)
-                history.RecordChoice(choice, _rollbackHistory.LastHistoryIndex);
+                progression.RecordChoice(choice, _rollbackHistory.LastHistoryIndex);
 
             scene.SetPhase(SceneRunPhase.ChoiceResolved);
 
@@ -230,10 +231,10 @@ namespace Ked.Progression
                     return SceneStepKind.Replay;
             }
 
-            scene.MoveTo(choice.Option.TargetEpisodeId);
+            progression.MoveTo(choice.Option.TargetEpisodeId);
             scene.SetPhase(SceneRunPhase.TargetMoved);
 
-            if (!scene.Chapter.IsSameScene(choice.FromEpisodeId, scene.CurrentEpisodeId))
+            if (!scene.Chapter.IsSameScene(choice.FromEpisodeId, progression.CurrentEpisodeId))
                 return SceneStepKind.SceneEnded;
 
             return SceneStepKind.Continue;
@@ -257,20 +258,17 @@ namespace Ked.Progression
 
         private async Task<SceneChoiceResolution> ResolveNextChoiceAsync(
             SceneTransaction scene,
-            ScenePendingHistory history,
+            SceneProgression progression,
             EpisodeNode episode,
             CancellationToken cancellationToken)
         {
             if (scene.ReplayPending)
                 return SceneChoiceResolution.ReplayRequested();
 
-            ProgressionState working =
-                scene.EntryState.FoldChoices(
-                    scene.Chapter,
-                    history.PendingOptions());
-
             ChapterAdvance advance =
-                ChapterTransition.Resolve(scene.Chapter, working);
+                ChapterTransition.Resolve(
+                    scene.Chapter,
+                    progression.WorkingState);
 
             if (scene.ReplayPending)
                 return SceneChoiceResolution.ReplayRequested();
@@ -311,8 +309,8 @@ namespace Ked.Progression
                         SceneChoiceSource.User));
             }
             catch (OperationCanceledException)
-                when (!cancellationToken.IsCancellationRequested
-                      && scene.ReplayPending)
+                when (!cancellationToken.IsCancellationRequested &&
+                      scene.ReplayPending)
             {
                 return SceneChoiceResolution.ReplayRequested();
             }
@@ -351,7 +349,7 @@ namespace Ked.Progression
 
         private async Task RestartReplayAsync(
             SceneTransaction scene,
-            ScenePendingHistory history,
+            SceneProgression progression,
             CancellationToken cancellationToken)
         {
             scene.SetPhase(SceneRunPhase.Replaying);
@@ -363,19 +361,18 @@ namespace Ked.Progression
             cancellationToken.ThrowIfCancellationRequested();
 
             if (_rollbackHistory.TryTakeRollbackTarget(out int historyIndex))
-                history.RewindAfter(historyIndex);
+                progression.RewindAfter(historyIndex);
 
-            history.RestartReplay();
             scene.RestartFromRoot();
 
             _log.Info(
                 $"[장면] 리플레이 — 루트부터. " +
-                $"자동 응답할 선택 {history.RecordedChoiceCount}개");
+                $"자동 응답할 선택 {progression.RecordedChoiceCount}개");
         }
 
         private void ApplyRestorePath(
             SceneTransaction scene,
-            ScenePendingHistory history)
+            SceneProgression progression)
         {
             IReadOnlyList<ScenePathStep> path = scene.RestorePath;
 
@@ -383,29 +380,12 @@ namespace Ked.Progression
             if (path == null)
                 return;
 
-            string cursor = scene.RootEpisodeId;
-
-            for (int i = 0; i < path.Count; i++)
+            if (!progression.TryRestorePath(path))
             {
-                ScenePathStep step = path[i];
-
-                if (!TryResolveSavedChoice(
-                        scene.Chapter,
-                        cursor,
-                        step,
-                        out EpisodeOption option))
-                {
-                    _log.Warning(
-                        $"[장면] 복원 경로가 챕터와 안 맞는다 " +
-                        $"({i}번째, {step.FromEpisodeId}[{step.OptionIndex}]) - " +
-                        "경로를 버리고 루트에서 시작한다.");
-
-                    history.ClearChoices();
-                    return;
-                }
-
-                history.RestoreChoice(option, cursor, step.OptionIndex);
-                cursor = option.TargetEpisodeId;
+                _log.Warning(
+                    "[장면] 복원 경로가 현재 챕터와 맞지 않는다 - " +
+                    "경로 전체를 버리고 Scene root에서 일반 진행한다.");
+                return;
             }
 
             // YarnChoices + line target 복원은 Host implementation이 소유한다.
@@ -413,64 +393,34 @@ namespace Ked.Progression
             _replayState.BeginLoadReplay();
         }
 
-        private static bool TryResolveSavedChoice(
-            ChapterProgression chapter,
-            string cursor,
-            ScenePathStep step,
-            out EpisodeOption option)
-        {
-            option = null;
-
-            if (!string.Equals(step.FromEpisodeId, cursor, StringComparison.Ordinal))
-                return false;
-
-            if (!chapter.TryGetNode(cursor, out EpisodeNode episode))
-                return false;
-
-            if (step.OptionIndex < 0 || step.OptionIndex >= episode.NextOptions.Count)
-                return false;
-
-            option = episode.NextOptions[step.OptionIndex];
-            return true;
-        }
-
         private SceneRunResult CommitScene(
             SceneTransaction scene,
-            ScenePendingHistory history,
+            SceneProgression progression,
             SceneRunOutcome outcome)
         {
             scene.SetPhase(SceneRunPhase.SceneCommitting);
 
-            ProgressionState state =
-                history.FoldInto(scene.Chapter, scene.EntryState);
-
-            List<CommittedChoice> choices =
-                history.CreateCommittedChoices();
-
-            List<string> watched =
-                history.CreateWatchedEpisodeIds();
-
-            string sceneId = scene.RootEpisode.SceneId;
+            SceneCommitResult commit = progression.Commit();
 
             _log.Info(
-                $"[장면] 확정 — 선택 {choices.Count}개, " +
-                $"시청 {watched.Count}개 → {state.CurrentEpisodeId}");
+                $"[장면] 확정 — 선택 {commit.Choices.Count}개, " +
+                $"시청 {commit.WatchedEpisodeIds.Count}개 → {commit.State.CurrentEpisodeId}");
 
             _reporter.ReportSceneCommitted(
                 scene.Chapter.ChapterId,
-                sceneId,
-                choices,
-                watched,
-                state);
+                scene.SceneId,
+                commit.Choices,
+                commit.WatchedEpisodeIds,
+                commit.State);
 
             scene.SetPhase(SceneRunPhase.SceneCommitted);
 
             _reporter.ReportSceneExited(
                 scene.Chapter.ChapterId,
-                sceneId,
-                state);
+                scene.SceneId,
+                commit.State);
 
-            return new SceneRunResult(outcome, state);
+            return new SceneRunResult(outcome, commit.State);
         }
     }
 }
