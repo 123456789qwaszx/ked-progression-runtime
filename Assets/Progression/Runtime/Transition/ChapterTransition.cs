@@ -11,14 +11,17 @@ namespace Ked.Progression
     {
         private static readonly ResolvedOption[] None = new ResolvedOption[0];
 
-        public static ChapterAdvance Resolve(ChapterProgression chapter, ProgressionState state)
+        public static ChapterAdvance Resolve(
+            ChapterProgression chapter,
+            ProgressionState state)
         {
             if (chapter == null) throw new ArgumentNullException(nameof(chapter));
             if (state == null) throw new ArgumentNullException(nameof(state));
             
             if (!chapter.TryGetNode(state.CurrentEpisodeId, out EpisodeNode node))
                 throw new ArgumentException(
-                    $"지금 에피소드 '{state.CurrentEpisodeId}'가 챕터 '{chapter.ChapterId}'에 없다.", nameof(state));
+                    $"지금 에피소드 '{state.CurrentEpisodeId}'가" +
+                    $" 챕터 '{chapter.ChapterId}'에 없다.", nameof(state));
             
             IReadOnlyList<EpisodeOption> options = node.NextOptions;
 
@@ -37,15 +40,16 @@ namespace Ked.Progression
             {
                 EpisodeOption option = options[i];
                 
+                // 실패한 표시 조건을 목록에서 숨긴다
                 if (FirstUnmet(option.VisibleConditions, state).IsConstructed)
                 {
-                    // 표시조건 미달이면 목록에 만들지 않는다.
                     hidden++;
                     continue;
                 }
 
                 ProgressionCondition blocking = FirstUnmet(option.Conditions, state);
 
+                // 막고 있는 조건이 없으면, 이 선택지를 선택 가능한 상태로 추가
                 if (!blocking.IsConstructed)
                 {
                     shownOrLocked.Add(ResolvedOption.Shown(option, i));

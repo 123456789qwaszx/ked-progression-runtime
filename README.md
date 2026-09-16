@@ -131,25 +131,6 @@ Scenario
 -회차 단위 상태
 ```
 
-정리하면:
-
-```text
-PlayerData
-= 여러 Playthrough를 넘어 유지
-
-Scenario
-= 현재 한 Playthrough 동안 유지
-
-Chapter
-= 현재 Chapter 동안 유지
-
-Scene
-= 현재 Commit / Replay 경계 동안 유지
-
-Episode
-= 현재 실행 중인 노드 동안 유지
-```
-
 ---
 
 ## Chapter

@@ -6,16 +6,13 @@ namespace Ked.Progression.Tests
     public sealed class SceneProgressionTests
     {
         [Test]
-        public void Rewind_removes_future_pending_choices_without_committing()
+        public void Rewind_removes_future_pending_choices()
         {
             ChapterProgression chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
-            ChapterAdvance first = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(first.Options[0], SceneChoiceSource.User, rollbackAnchor: 10);
-
-            ChapterAdvance second = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(second.Options[0], SceneChoiceSource.User, rollbackAnchor: 20);
+            AdvanceFirstOption(scene, rollbackAnchor: 10);
+            AdvanceFirstOption(scene, rollbackAnchor: 20);
 
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("c"));
             Assert.That(scene.RecordedChoiceCount, Is.EqualTo(2));
@@ -26,7 +23,26 @@ namespace Ked.Progression.Tests
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("b"));
             Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("b"));
             Assert.That(scene.RecordedChoiceCount, Is.EqualTo(1));
-            Assert.That(scene.IsCommitted, Is.False);
+        }
+
+        [Test]
+        public void Rewind_removes_future_watched_events()
+        {
+            ChapterProgression chapter = CreateChapter();
+            var scene = new SceneProgression(chapter, chapter.CreateEntryState());
+
+            scene.NoteCurrentEpisodeWatched(10);
+            AdvanceFirstOption(scene, rollbackAnchor: 10);
+
+            scene.NoteCurrentEpisodeWatched(20);
+            AdvanceFirstOption(scene, rollbackAnchor: 20);
+
+            scene.RewindAfter(10);
+
+            SceneCommitResult commit = scene.CreateCommitResult();
+
+            Assert.That(commit.WatchedEpisodeIds, Is.EqualTo(new[] { "a" }));
+            Assert.That(commit.State.CurrentEpisodeId, Is.EqualTo("b"));
         }
 
         [Test]
@@ -35,8 +51,7 @@ namespace Ked.Progression.Tests
             ChapterProgression chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
-            ChapterAdvance first = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(first.Options[0], SceneChoiceSource.User, rollbackAnchor: 10);
+            AdvanceFirstOption(scene, rollbackAnchor: 10);
 
             scene.RestartReplay();
 
@@ -44,7 +59,6 @@ namespace Ked.Progression.Tests
             Assert.That(scene.EntryState.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.HasRecordedChoice, Is.True);
-            Assert.That(scene.IsCommitted, Is.False);
         }
 
         [Test]
@@ -53,29 +67,31 @@ namespace Ked.Progression.Tests
             ChapterProgression chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
-            ChapterAdvance first = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(first.Options[0], SceneChoiceSource.User, rollbackAnchor: 10);
-
-            ChapterAdvance second = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(second.Options[0], SceneChoiceSource.User, rollbackAnchor: 20);
+            AdvanceFirstOption(scene, rollbackAnchor: 10);
+            AdvanceFirstOption(scene, rollbackAnchor: 20);
 
             scene.RestartReplay();
 
-            SceneChoice replayedFirst = scene.TakeRecordedChoice(10);
+            SceneChoice first = scene.TakeRecordedChoice(10);
+
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
-            scene.MoveTo(replayedFirst.Option.TargetEpisodeId);
 
-            SceneChoice replayedSecond = scene.TakeRecordedChoice(20);
+            scene.MoveTo(first.Option.TargetEpisodeId);
+
+            SceneChoice second = scene.TakeRecordedChoice(20);
+
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("b"));
-            scene.MoveTo(replayedSecond.Option.TargetEpisodeId);
 
-            Assert.That(replayedFirst.Source, Is.EqualTo(SceneChoiceSource.Recorded));
-            Assert.That(replayedFirst.FromEpisodeId, Is.EqualTo("a"));
-            Assert.That(replayedSecond.Source, Is.EqualTo(SceneChoiceSource.Recorded));
-            Assert.That(replayedSecond.FromEpisodeId, Is.EqualTo("b"));
+            scene.MoveTo(second.Option.TargetEpisodeId);
+
+            Assert.That(first.Source, Is.EqualTo(SceneChoiceSource.Recorded));
+            Assert.That(first.FromEpisodeId, Is.EqualTo("a"));
+
+            Assert.That(second.Source, Is.EqualTo(SceneChoiceSource.Recorded));
+            Assert.That(second.FromEpisodeId, Is.EqualTo("b"));
+
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("c"));
             Assert.That(scene.HasRecordedChoice, Is.False);
-            Assert.That(scene.IsCommitted, Is.False);
         }
 
         [Test]
@@ -97,6 +113,7 @@ namespace Ked.Progression.Tests
 
             SceneChoice first = scene.TakeRecordedChoice(10);
             scene.MoveTo(first.Option.TargetEpisodeId);
+
             SceneChoice second = scene.TakeRecordedChoice(20);
             scene.MoveTo(second.Option.TargetEpisodeId);
 
@@ -122,51 +139,42 @@ namespace Ked.Progression.Tests
             Assert.That(scene.HasRecordedChoice, Is.False);
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("a"));
-            Assert.That(scene.IsCommitted, Is.False);
         }
 
         [Test]
-        public void Rewind_removes_future_watched_events()
+        public void Commit_projects_working_state_choices_and_watched_events()
         {
             ChapterProgression chapter = CreateChapter();
             var scene = new SceneProgression(chapter, chapter.CreateEntryState());
 
             scene.NoteCurrentEpisodeWatched(10);
-            ChapterAdvance first = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(first.Options[0], SceneChoiceSource.User, rollbackAnchor: 10);
-
-            scene.NoteCurrentEpisodeWatched(20);
-            ChapterAdvance second = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(second.Options[0], SceneChoiceSource.User, rollbackAnchor: 20);
-
-            scene.RewindAfter(10);
-
-            SceneCommitResult commit = scene.Commit();
-
-            Assert.That(commit.WatchedEpisodeIds, Is.EqualTo(new[] { "a" }));
-            Assert.That(commit.State.CurrentEpisodeId, Is.EqualTo("b"));
-        }
-
-        [Test]
-        public void Commit_projects_state_choices_and_watched_events_once()
-        {
-            ChapterProgression chapter = CreateChapter();
-            var scene = new SceneProgression(chapter, chapter.CreateEntryState());
-
-            scene.NoteCurrentEpisodeWatched(10);
-            ChapterAdvance first = ChapterTransition.Resolve(chapter, scene.WorkingState);
-            scene.Advance(first.Options[0], SceneChoiceSource.User, rollbackAnchor: 10);
+            AdvanceFirstOption(scene, rollbackAnchor: 10);
             scene.NoteCurrentEpisodeWatched(20);
 
-            SceneCommitResult commit = scene.Commit();
+            SceneCommitResult commit = scene.CreateCommitResult();
 
             Assert.That(commit.State.CurrentEpisodeId, Is.EqualTo("b"));
+
             Assert.That(commit.Choices.Count, Is.EqualTo(1));
             Assert.That(commit.Choices[0].FromEpisodeId, Is.EqualTo("a"));
             Assert.That(commit.Choices[0].OptionIndex, Is.EqualTo(0));
+
             Assert.That(commit.WatchedEpisodeIds, Is.EqualTo(new[] { "a", "b" }));
-            Assert.That(scene.IsCommitted, Is.True);
-            Assert.Throws<InvalidOperationException>(() => scene.Commit());
+        }
+
+        private static void AdvanceFirstOption(
+            SceneProgression scene,
+            int rollbackAnchor)
+        {
+            ChapterAdvance advance =
+                ChapterTransition.Resolve(
+                    scene.Chapter,
+                    scene.WorkingState);
+
+            scene.Advance(
+                advance.Options[0],
+                SceneChoiceSource.User,
+                rollbackAnchor);
         }
 
         private static ChapterProgression CreateChapter()
