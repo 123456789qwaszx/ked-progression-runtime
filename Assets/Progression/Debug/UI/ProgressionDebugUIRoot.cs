@@ -36,6 +36,7 @@ namespace Ked.Progression.Debugging.UI
             EpisodeSkip,
             Rollback,
             BacklogJump,
+            BacklogPreviousScene,
             ChoiceInfo,
             ChoiceRoot,
             Status,
@@ -51,6 +52,7 @@ namespace Ked.Progression.Debugging.UI
         public event Action EpisodeSkipClicked;
         public event Action RollbackClicked;
         public event Action BacklogJumpClicked;
+        public event Action BacklogPreviousSceneClicked;
         public event Action<int> ChoiceClicked;
 
         private RectTransform _choiceRoot;
@@ -74,6 +76,9 @@ namespace Ked.Progression.Debugging.UI
             BindEvent(View.Button(Refs.EpisodeSkip), HandleEpisodeSkipClicked);
             BindEvent(View.Button(Refs.Rollback), HandleRollbackClicked);
             BindEvent(View.Button(Refs.BacklogJump), HandleBacklogJumpClicked);
+            BindEvent(
+                View.Button(Refs.BacklogPreviousScene),
+                HandleBacklogPreviousSceneClicked);
 
             _choiceInfo = View.Text(Refs.ChoiceInfo);
             _choiceRoot = View.Rect(Refs.ChoiceRoot);
@@ -234,5 +239,8 @@ namespace Ked.Progression.Debugging.UI
 
         private void HandleBacklogJumpClicked(PointerEventData _) =>
             BacklogJumpClicked?.Invoke();
+
+        private void HandleBacklogPreviousSceneClicked(PointerEventData _) =>
+            BacklogPreviousSceneClicked?.Invoke();
     }
 }

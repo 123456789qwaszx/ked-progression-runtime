@@ -151,7 +151,7 @@ namespace Ked.Progression.Debugging.UI
             CreateLabel(
                 parent,
                 "ReplayHeader",
-                "Scene replay",
+                "Scene replay / fork",
                 16,
                 24f);
 
@@ -163,7 +163,12 @@ namespace Ked.Progression.Debugging.UI
             CreateButton(
                 parent,
                 "BacklogJump",
-                "Backlog Jump 2 Steps");
+                "Backlog Jump (Current Scene)");
+
+            CreateButton(
+                parent,
+                "BacklogPreviousScene",
+                "Backlog Fork (Previous Scene)");
 
             Text choiceInfo = CreateLabel(
                 parent,

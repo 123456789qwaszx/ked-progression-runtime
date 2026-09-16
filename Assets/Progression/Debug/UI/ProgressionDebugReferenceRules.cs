@@ -21,6 +21,7 @@ namespace Ked.Progression.Debugging.UI
             EpisodeSkip,
             Rollback,
             BacklogJump,
+            BacklogPreviousScene,
         }
 
         public static string Describe(Transition transition)
@@ -82,11 +83,20 @@ namespace Ked.Progression.Debugging.UI
 
                 case Transition.BacklogJump:
                     return Report(
-                        "BACKLOG JUMP",
-                        "[MATCH] current Scene\n  현재 Scene의 backlog는 Rollback과 같은 replay-to-target\n  Scene/EntryState 유지, target 이후 pending/history 제거",
-                        "[OUTSIDE-PROGRESSION] previous Scene\n  완료된 과거 Scene은 replay가 아니라 Stop -> checkpoint 복원 -> 새 run/fork",
-                        "[HARNESS GAP] previous Scene fork\n  Target Runtime의 Stop/Start primitive는 있으나 Debug Host는 cross-Scene Save fork를 모델링하지 않음",
-                        "[PRESENTATION-ONLY] target selection / replay prepare\n  backlog line 해석, variable checkpoint, Stage/Scope 복원은 Runtime 밖의 책임");
+                        "BACKLOG / CURRENT SCENE",
+                        "[MATCH] progression primitive\n  현재 Scene의 backlog는 Rollback과 같은 replay-to-target",
+                        "[MATCH] Scene / pending\n  Scene/EntryState 유지, target 이후 pending/history 제거, root부터 재생",
+                        "[PRESENTATION-ONLY] target selection\n  어떤 backlog line을 rollback anchor로 바꿀지는 UI/Presentation 책임",
+                        "[PRESENTATION-ONLY] replay prepare\n  variable checkpoint, Stage/Scope 복원은 Runtime 밖의 책임");
+
+                case Transition.BacklogPreviousScene:
+                    return Report(
+                        "BACKLOG / PREVIOUS SCENE",
+                        "[OUTSIDE-PROGRESSION] fork orchestration\n  Ref: 현재 run Stop -> 과거 SceneCheckpoint/기록 선택 -> 새 Playthrough -> Launch",
+                        "[MATCH] Runtime primitive\n  Target Runtime은 새 API 없이 Stop + Start(historical checkpoint, optional restorePath) 사용",
+                        "[MATCH] Debug Host fixture\n  Scene B에서 버튼을 누르면 현재 run 폐기 -> Scene A root(ep-a1) + ep-a1->ep-a2 path로 새 run",
+                        "[MATCH] pending boundary\n  버린 current Scene pending은 commit하지 않고, historical fixture에서 새 Scene pending을 시작",
+                        "[SAVE/PRESENTATION-ONLY] 실제 프로젝트\n  SceneRecord/Backlog 상속, 새 PlaythroughId, line target/Yarn choices/Stage 복원은 Runtime 밖의 책임");
 
                 default:
                     return Report("UNKNOWN", "비교 규칙 없음");

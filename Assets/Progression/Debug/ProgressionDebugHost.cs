@@ -27,6 +27,10 @@ namespace Ked.Progression.Debugging
 
         private ProgressionState _restoreFixtureState;
         private IReadOnlyList<ScenePathStep> _restoreFixturePath = Array.Empty<ScenePathStep>();
+
+        private ProgressionState _backlogForkFixtureState;
+        private IReadOnlyList<ScenePathStep> _backlogForkFixturePath = Array.Empty<ScenePathStep>();
+
         private int? _rollbackTarget;
 
         private string _currentChapterId = "-";
@@ -60,6 +64,19 @@ namespace Ked.Progression.Debugging
             _restoreFixturePath = new[]
             {
                 new ScenePathStep("ep-b1", 0),
+            };
+
+            // 완료된 과거 Scene의 Backlog를 선택했을 때 Save/Host가 준비한다고 가정하는 fixture.
+            // Scene B 실행 중 이 fixture를 선택하면 현재 run을 버리고 Scene A root에서 새 run을 만든다.
+            // Scene A 안의 저장 위치는 ep-a1 첫 선택을 재소비하여 ep-a2까지 도달하는 것으로 표현한다.
+            _backlogForkFixtureState = ProgressionState.Restore(
+                _chapter,
+                "ep-a1",
+                new Dictionary<string, int>());
+
+            _backlogForkFixturePath = new[]
+            {
+                new ScenePathStep("ep-a1", 0),
             };
 
             var runner = new SceneRunner(
@@ -115,8 +132,11 @@ namespace Ked.Progression.Debugging
         {
             Run(() => ReplayAsync(
                 Math.Max(0, LastHistoryIndex - 2),
-                "Backlog Jump"));
+                "Backlog Jump / Current Scene"));
         }
+
+        public void RequestPreviousSceneBacklogFork() =>
+            Run(PreviousSceneBacklogForkAsync);
 
         public void SelectChoice(int index)
         {
@@ -191,6 +211,36 @@ namespace Ked.Progression.Debugging
                 _chapter,
                 _restoreFixtureState,
                 _restoreFixturePath);
+        }
+
+        private async Task PreviousSceneBacklogForkAsync()
+        {
+            Info("[HOST] PREVIOUS-SCENE BACKLOG FORK REQUEST");
+
+            if (!_driver.IsRunning || _currentSceneId != "scene-b")
+            {
+                Warning(
+                    "[HOST] previous-Scene Backlog fork fixture는 Scene B 실행 중에만 시험한다.");
+                return;
+            }
+
+            // 실제 프로젝트에서는 SaveCoordinator가 과거 SceneCheckpoint와 optional SavedLoadPlan을
+            // 준비하고 새 Playthrough를 만든다. Debug Host는 그 Save 책임을 흉내 내지 않고,
+            // Runtime 경계인 Stop -> historical checkpoint Start만 재현한다.
+            await StopCurrentRunAsync();
+            ResetTransientPlaybackState();
+
+            Info(
+                "[HOST][SAVE-FORK] historical fixture — " +
+                $"root={_backlogForkFixtureState.CurrentEpisodeId} " +
+                $"path={_backlogForkFixturePath.Count}");
+
+            _driver.Start(
+                _chapter,
+                _backlogForkFixtureState,
+                _backlogForkFixturePath);
+
+            PublishState();
         }
 
         private async Task StopAsync()

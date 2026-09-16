@@ -33,6 +33,7 @@ namespace Ked.Progression.Debugging.UI
             _view.EpisodeSkipClicked += HandleEpisodeSkipClicked;
             _view.RollbackClicked += HandleRollbackClicked;
             _view.BacklogJumpClicked += HandleBacklogJumpClicked;
+            _view.BacklogPreviousSceneClicked += HandleBacklogPreviousSceneClicked;
             _view.ChoiceClicked += _host.SelectChoice;
 
             _host.StateChanged += _view.SetState;
@@ -64,6 +65,7 @@ namespace Ked.Progression.Debugging.UI
             _view.EpisodeSkipClicked -= HandleEpisodeSkipClicked;
             _view.RollbackClicked -= HandleRollbackClicked;
             _view.BacklogJumpClicked -= HandleBacklogJumpClicked;
+            _view.BacklogPreviousSceneClicked -= HandleBacklogPreviousSceneClicked;
             _view.ChoiceClicked -= _host.SelectChoice;
 
             _host.StateChanged -= _view.SetState;
@@ -116,6 +118,12 @@ namespace Ked.Progression.Debugging.UI
         {
             Show(ProgressionDebugReferenceRules.Transition.BacklogJump);
             _host.RequestBacklogJump();
+        }
+
+        private void HandleBacklogPreviousSceneClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.BacklogPreviousScene);
+            _host.RequestPreviousSceneBacklogFork();
         }
 
         private void Show(ProgressionDebugReferenceRules.Transition transition)
