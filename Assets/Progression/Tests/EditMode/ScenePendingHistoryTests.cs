@@ -8,7 +8,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void RestartReplay_KeepsChoicesAndResetsCursor()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneAutoChapter();
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
             EpisodeOption option = chapter.StartNode.NextOptions[0];
 
             var history = new ScenePendingHistory();
@@ -27,7 +27,7 @@ namespace Ked.Progression.Tests
         [Test]
         public void RewindAfter_RemovesChoicesPastAnchor()
         {
-            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneAutoChapter();
+            ChapterProgression chapter = TestChapterFactory.CreateTwoSceneChapter();
             EpisodeOption option = chapter.StartNode.NextOptions[0];
 
             var history = new ScenePendingHistory();
