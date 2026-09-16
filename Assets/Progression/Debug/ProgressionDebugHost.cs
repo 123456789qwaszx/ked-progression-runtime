@@ -25,7 +25,8 @@ namespace Ked.Progression.Debugging
         private IReadOnlyList<ResolvedOption> _currentOptions = Array.Empty<ResolvedOption>();
         private int _hiddenChoiceCount;
 
-        private ProgressionState _savedState;
+        private ProgressionState _restoreFixtureState;
+        private IReadOnlyList<ScenePathStep> _restoreFixturePath = Array.Empty<ScenePathStep>();
         private int? _rollbackTarget;
 
         private string _currentChapterId = "-";
@@ -47,12 +48,19 @@ namespace Ked.Progression.Debugging
         {
             _chapter = CreateDebugChapter();
 
-            // Continue/Manual Load를 처음부터 시험할 수 있도록 Scene B root의
-            // committed checkpoint 하나를 가짜 저장 상태로 준비한다.
-            _savedState = ProgressionState.Restore(
+            // Continue / Manual Load의 mid-Scene 복원 계약을 반복해서 시험하기 위한 고정 fixture.
+            // 저장 checkpoint는 Scene B root(ep-b1)이고, 저장 위치까지의 progression path는
+            // ep-b1의 첫 선택을 재소비하여 ep-b2로 이동하는 한 단계다.
+            // Yarn choice / line target은 Progression 밖의 책임이므로 여기서는 모델링하지 않는다.
+            _restoreFixtureState = ProgressionState.Restore(
                 _chapter,
                 "ep-b1",
                 new Dictionary<string, int>());
+
+            _restoreFixturePath = new[]
+            {
+                new ScenePathStep("ep-b1", 0),
+            };
 
             var runner = new SceneRunner(
                 this,
@@ -157,7 +165,7 @@ namespace Ked.Progression.Debugging
             }
 
             ResetTransientPlaybackState();
-            _driver.Start(_chapter, _savedState);
+            StartRestoreFixture("CONTINUE");
             PublishState();
             return Task.CompletedTask;
         }
@@ -168,8 +176,21 @@ namespace Ked.Progression.Debugging
             await StopCurrentRunAsync();
             ResetTransientPlaybackState();
 
-            _driver.Start(_chapter, _savedState);
+            StartRestoreFixture("MANUAL LOAD");
             PublishState();
+        }
+
+        private void StartRestoreFixture(string source)
+        {
+            Info(
+                $"[HOST] {source} restore fixture — " +
+                $"root={_restoreFixtureState.CurrentEpisodeId} " +
+                $"path={_restoreFixturePath.Count}");
+
+            _driver.Start(
+                _chapter,
+                _restoreFixtureState,
+                _restoreFixturePath);
         }
 
         private async Task StopAsync()
@@ -262,7 +283,7 @@ namespace Ked.Progression.Debugging
                 LastHistoryIndex,
                 _driver?.PendingPath.Count ?? 0,
                 IsSeekingActive,
-                _savedState?.CurrentEpisodeId ?? "-");
+                _restoreFixtureState?.CurrentEpisodeId ?? "-");
         }
 
         private void PublishState()
@@ -424,7 +445,6 @@ namespace Ked.Progression.Debugging
             IReadOnlyList<string> watchedEpisodeIds,
             ProgressionState state)
         {
-            _savedState = state;
             PublishState();
 
             Info(
