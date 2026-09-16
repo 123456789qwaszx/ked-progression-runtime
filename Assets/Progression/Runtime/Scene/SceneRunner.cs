@@ -17,30 +17,27 @@ namespace Ked.Progression
 
         private readonly IScenePlayback _playback;
         private readonly IChapterOptionsView _options;
-        private readonly ISceneSeek _seek;
+        private readonly ISceneReplayState _replayState;
         private readonly IRollbackHistory _rollbackHistory;
         private readonly IProgressionReporter _reporter;
         private readonly ISceneBacklog _backlog;
-        private readonly IDialogueChoiceReplay _dialogueChoices;
         private readonly IProgressionLog _log;
 
         public SceneRunner(
             IScenePlayback playback,
             IChapterOptionsView options,
-            ISceneSeek seek,
+            ISceneReplayState replayState,
             IRollbackHistory rollbackHistory,
             IProgressionReporter reporter,
             ISceneBacklog backlog,
-            IDialogueChoiceReplay dialogueChoices,
             IProgressionLog log = null)
         {
             _playback = playback ?? throw new ArgumentNullException(nameof(playback));
             _options = options ?? throw new ArgumentNullException(nameof(options));
-            _seek = seek ?? throw new ArgumentNullException(nameof(seek));
+            _replayState = replayState ?? throw new ArgumentNullException(nameof(replayState));
             _rollbackHistory = rollbackHistory ?? throw new ArgumentNullException(nameof(rollbackHistory));
             _reporter = reporter ?? throw new ArgumentNullException(nameof(reporter));
             _backlog = backlog ?? throw new ArgumentNullException(nameof(backlog));
-            _dialogueChoices = dialogueChoices ?? throw new ArgumentNullException(nameof(dialogueChoices));
             _log = log ?? NullProgressionLog.Instance;
         }
 
@@ -59,7 +56,7 @@ namespace Ked.Progression
             {
                 await EnterSceneAsync(scene, cancellationToken);
 
-                ApplyLoadPlan(scene, history);
+                ApplyRestorePath(scene, history);
                 scene.SetPhase(SceneRunPhase.LoadPlanApplied);
 
                 while (true)
@@ -164,7 +161,7 @@ namespace Ked.Progression
 
             SceneChoiceResolution resolution;
 
-            if (history.HasRecordedChoice && _seek.IsSeekingActive)
+            if (history.HasRecordedChoice && _replayState.IsSeekingActive)
             {
                 SceneChoice recorded =
                     history.TakeRecordedChoice(_rollbackHistory.LastHistoryIndex);
@@ -176,12 +173,12 @@ namespace Ked.Progression
                 if (history.HasRecordedChoice)
                     history.DiscardUnconsumedChoices();
 
-                if (_seek.IsSeekingActive)
+                if (_replayState.IsSeekingActive)
                 {
                     _log.Warning(
                         "[장면] 시크 표적을 못 찾은 채 선택지에 닿았다 - 시크를 끄고 일반 재생으로 전환한다.");
 
-                    _seek.ClearSeek();
+                    _replayState.ClearSeek();
                 }
 
                 resolution =
@@ -360,26 +357,21 @@ namespace Ked.Progression
                 $"자동 응답할 선택 {history.RecordedChoiceCount}개");
         }
 
-        private void ApplyLoadPlan(
+        private void ApplyRestorePath(
             SceneTransaction scene,
             ScenePendingHistory history)
         {
-            SceneLoadPlan plan = scene.LoadPlan;
+            IReadOnlyList<ScenePathStep> path = scene.RestorePath;
 
-            if (plan == null)
+            // null은 일반 진입. 빈 path는 유효한 restore 진입이다.
+            if (path == null)
                 return;
-
-            if (plan.Target == null || string.IsNullOrEmpty(plan.Target.NodeName))
-            {
-                _log.Warning("[장면] 로드 계획에 표적이 없다 - 루트에서 시작한다.");
-                return;
-            }
 
             string cursor = scene.RootEpisodeId;
 
-            for (int i = 0; i < plan.Path.Count; i++)
+            for (int i = 0; i < path.Count; i++)
             {
-                ScenePathStep step = plan.Path[i];
+                ScenePathStep step = path[i];
 
                 if (!TryResolveSavedChoice(
                         scene.Chapter,
@@ -388,9 +380,9 @@ namespace Ked.Progression
                         out EpisodeOption option))
                 {
                     _log.Warning(
-                        $"[장면] 로드 경로가 챕터와 안 맞는다 " +
+                        $"[장면] 복원 경로가 챕터와 안 맞는다 " +
                         $"({i}번째, {step.FromEpisodeId}[{step.OptionIndex}]) - " +
-                        "계획을 버리고 루트에서 시작한다.");
+                        "경로를 버리고 루트에서 시작한다.");
 
                     history.ClearChoices();
                     return;
@@ -400,18 +392,9 @@ namespace Ked.Progression
                 cursor = option.TargetEpisodeId;
             }
 
-            _dialogueChoices.RestoreChoices(plan.DialogueChoices);
-
-            _seek.BeginLoadSeek(
-                plan.Target.NodeName,
-                plan.Target.LineId,
-                plan.Target.Occurrence);
-
-            _log.Info(
-                $"[장면] 로드 — 루트 {scene.RootEpisodeId}에서 " +
-                $"{plan.Target.NodeName}/{plan.Target.LineId}#{plan.Target.Occurrence}까지. " +
-                $"경로 {history.RecordedChoiceCount}개, " +
-                $"대화 선택 {plan.DialogueChoices.Count}개");
+            // YarnChoices + line target 복원은 Host implementation이 소유한다.
+            // progression path 검증이 성공한 뒤에만 시작한다.
+            _replayState.BeginLoadReplay();
         }
 
         private static bool TryResolveSavedChoice(

@@ -10,7 +10,8 @@ namespace Ked.Progression
         public string RootEpisodeId { get; }
         public string CurrentEpisodeId { get; private set; }
 
-        public SceneLoadPlan LoadPlan { get; }
+        // null이면 일반 진입, 빈 목록도 유효한 restore 진입이다.
+        public IReadOnlyList<ScenePathStep> RestorePath { get; }
 
         public SceneRunPhase Phase { get; private set; } = SceneRunPhase.None;
         public bool ReplayPending { get; private set; }
@@ -26,7 +27,7 @@ namespace Ked.Progression
         public SceneTransaction(
             ChapterProgression chapter,
             ProgressionState entryState,
-            SceneLoadPlan loadPlan = null)
+            IReadOnlyList<ScenePathStep> restorePath = null)
         {
             Chapter = chapter;
             EntryState = entryState;
@@ -34,7 +35,7 @@ namespace Ked.Progression
             RootEpisodeId = entryState.CurrentEpisodeId;
             CurrentEpisodeId = RootEpisodeId;
 
-            LoadPlan = loadPlan;
+            RestorePath = restorePath;
         }
 
         internal void SetPhase(SceneRunPhase phase)
