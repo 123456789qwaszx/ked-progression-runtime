@@ -39,6 +39,8 @@ namespace Ked.Progression.Debugging.UI
             ChoiceInfo,
             ChoiceRoot,
             Status,
+            Transition,
+            Console,
         }
 
         public event Action NewGameClicked;
@@ -54,8 +56,13 @@ namespace Ked.Progression.Debugging.UI
         private RectTransform _choiceRoot;
         private Text _choiceInfo;
         private Text _status;
+        private Text _transition;
+        private Text _console;
 
         private readonly List<GameObject> _choiceItems = new List<GameObject>();
+        private readonly List<string> _consoleLines = new List<string>();
+
+        private const int ConsoleLineLimit = 80;
 
         protected override void OnInitialize()
         {
@@ -71,6 +78,16 @@ namespace Ked.Progression.Debugging.UI
             _choiceInfo = View.Text(Refs.ChoiceInfo);
             _choiceRoot = View.Rect(Refs.ChoiceRoot);
             _status = View.Text(Refs.Status);
+            _transition = View.Text(Refs.Transition);
+            _console = View.Text(Refs.Console);
+
+            Application.logMessageReceived += HandleUnityLog;
+        }
+
+        protected override void OnDestroy()
+        {
+            Application.logMessageReceived -= HandleUnityLog;
+            base.OnDestroy();
         }
 
         public void SetState(ProgressionDebugSnapshot snapshot)
@@ -79,7 +96,8 @@ namespace Ked.Progression.Debugging.UI
                 return;
 
             _status.text =
-                "Current\n" +
+                "Target / actual progression\n" +
+                "--------------------------------\n" +
                 $"Running  : {snapshot.IsRunning}\n" +
                 $"Chapter  : {snapshot.ChapterId}\n" +
                 $"Scene    : {snapshot.SceneId}\n" +
@@ -89,12 +107,14 @@ namespace Ked.Progression.Debugging.UI
                 $"Pending  : {snapshot.PendingCount}\n" +
                 $"Seeking  : {snapshot.IsSeeking}\n" +
                 $"Saved Ep : {snapshot.SavedEpisodeId}\n\n" +
-                "Console tags\n" +
-                "[LIFE] Chapter / Scene / Episode\n" +
-                "[RUN] start / cancel / stop\n" +
-                "[REPLAY] rollback / backlog jump\n" +
-                "[PRESENT] skip / playback\n" +
-                "[STATE] commit result";
+                "Target = ked-progression-runtime/dev\n" +
+                "실제 ProgressionDriver / SceneRunner 실행값";
+        }
+
+        public void SetTransitionReport(string report)
+        {
+            if (_transition != null)
+                _transition.text = report ?? string.Empty;
         }
 
         public void SetChoices(
@@ -141,6 +161,43 @@ namespace Ked.Progression.Debugging.UI
 
                 _choiceItems.Add(button.gameObject);
             }
+        }
+
+        private void HandleUnityLog(
+            string condition,
+            string stackTrace,
+            LogType type)
+        {
+            string prefix;
+
+            switch (type)
+            {
+                case LogType.Warning:
+                    prefix = "WARN ";
+                    break;
+
+                case LogType.Error:
+                case LogType.Exception:
+                case LogType.Assert:
+                    prefix = "ERROR ";
+                    break;
+
+                default:
+                    prefix = string.Empty;
+                    break;
+            }
+
+            _consoleLines.Add(prefix + condition);
+
+            if (_consoleLines.Count > ConsoleLineLimit)
+            {
+                _consoleLines.RemoveRange(
+                    0,
+                    _consoleLines.Count - ConsoleLineLimit);
+            }
+
+            if (_console != null)
+                _console.text = string.Join("\n", _consoleLines.ToArray());
         }
 
         private void ClearChoices()

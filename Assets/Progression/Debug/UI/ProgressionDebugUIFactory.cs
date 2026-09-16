@@ -47,83 +47,133 @@ namespace Ked.Progression.Debugging.UI
             root.anchorMax = new Vector2(0f, 1f);
             root.pivot = new Vector2(0f, 1f);
             root.anchoredPosition = new Vector2(16f, -16f);
-            root.sizeDelta = new Vector2(460f, 1010f);
+            root.sizeDelta = new Vector2(1580f, 1048f);
 
-            Image background = root.gameObject.AddComponent<Image>();
-            background.color = new Color(0.06f, 0.07f, 0.09f, 0.94f);
+            HorizontalLayoutGroup columns =
+                root.gameObject.AddComponent<HorizontalLayoutGroup>();
 
-            VerticalLayoutGroup layout =
-                root.gameObject.AddComponent<VerticalLayoutGroup>();
+            columns.spacing = 12f;
+            columns.childControlHeight = true;
+            columns.childControlWidth = true;
+            columns.childForceExpandHeight = true;
+            columns.childForceExpandWidth = false;
 
-            layout.padding = new RectOffset(14, 14, 14, 14);
-            layout.spacing = 6f;
-            layout.childControlHeight = true;
-            layout.childControlWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childForceExpandWidth = true;
-
-            CreateLabel(
+            RectTransform consolePanel = CreatePanel(
                 root,
+                "ConsolePanel",
+                620f);
+
+            RectTransform controlPanel = CreatePanel(
+                root,
+                "ControlPanel",
+                940f);
+
+            BuildConsole(consolePanel);
+            BuildControls(controlPanel);
+
+            root.gameObject.SetActive(false);
+
+            return root.gameObject.AddComponent<ProgressionDebugUIRoot>();
+        }
+
+        private static void BuildConsole(RectTransform parent)
+        {
+            CreateLabel(
+                parent,
+                "ConsoleHeader",
+                "Runtime Console",
+                24,
+                38f);
+
+            Text source = CreateLabel(
+                parent,
+                "ConsoleSource",
+                "Target actual logs\n[LIFE] [RUN] [REPLAY] [PRESENT] [STATE]",
+                14,
+                44f);
+
+            source.color = new Color(0.78f, 0.82f, 0.88f, 1f);
+
+            Text console = CreateLabel(
+                parent,
+                "Console",
+                string.Empty,
+                14,
+                0f);
+
+            LayoutElement consoleLayout =
+                console.GetComponent<LayoutElement>();
+
+            consoleLayout.flexibleHeight = 1f;
+            console.alignment = TextAnchor.UpperLeft;
+            console.horizontalOverflow = HorizontalWrapMode.Wrap;
+            console.verticalOverflow = VerticalWrapMode.Truncate;
+        }
+
+        private static void BuildControls(RectTransform parent)
+        {
+            CreateLabel(
+                parent,
                 "Title",
-                "Progression Runtime Debug",
+                "Progression Lifecycle / Parity Debug",
                 24,
                 38f);
 
             CreateLabel(
-                root,
+                parent,
                 "LifecycleHeader",
                 "Session / Host lifecycle",
-                17,
-                28f);
+                16,
+                24f);
 
-            CreateButton(root, "NewGame", "New Game");
-            CreateButton(root, "Continue", "Continue");
-            CreateButton(root, "ManualLoad", "Manual Load");
-            CreateButton(root, "Stop", "Stop / Title Exit");
+            CreateButton(parent, "NewGame", "New Game");
+            CreateButton(parent, "Continue", "Continue");
+            CreateButton(parent, "ManualLoad", "Manual Load");
+            CreateButton(parent, "Stop", "Stop / Title Exit");
 
             CreateLabel(
-                root,
+                parent,
                 "PlaybackHeader",
                 "Current playback",
-                17,
-                28f);
+                16,
+                24f);
 
             CreateButton(
-                root,
+                parent,
                 "CompleteNode",
                 "Complete Episode Node");
 
             CreateButton(
-                root,
+                parent,
                 "EpisodeSkip",
                 "Episode Skip");
 
             CreateLabel(
-                root,
+                parent,
                 "ReplayHeader",
                 "Scene replay",
-                17,
-                28f);
+                16,
+                24f);
 
             CreateButton(
-                root,
+                parent,
                 "Rollback",
                 "Rollback 1 Step");
 
             CreateButton(
-                root,
+                parent,
                 "BacklogJump",
                 "Backlog Jump 2 Steps");
 
             Text choiceInfo = CreateLabel(
-                root,
+                parent,
                 "ChoiceInfo",
                 string.Empty,
-                16,
-                26f);
+                15,
+                24f);
 
             RectTransform choiceRoot = CreateRect(
-                root,
+                parent,
                 "ChoiceRoot");
 
             VerticalLayoutGroup choiceLayout =
@@ -147,22 +197,56 @@ namespace Ked.Progression.Debugging.UI
             choiceLayoutElement.minHeight = 0f;
 
             Text status = CreateLabel(
-                root,
+                parent,
                 "Status",
                 string.Empty,
-                15,
-                320f);
+                14,
+                210f);
 
             status.alignment = TextAnchor.UpperLeft;
             status.horizontalOverflow = HorizontalWrapMode.Wrap;
-            status.verticalOverflow = VerticalWrapMode.Overflow;
+            status.verticalOverflow = VerticalWrapMode.Truncate;
+
+            Text transition = CreateLabel(
+                parent,
+                "Transition",
+                string.Empty,
+                14,
+                330f);
+
+            transition.alignment = TextAnchor.UpperLeft;
+            transition.horizontalOverflow = HorizontalWrapMode.Wrap;
+            transition.verticalOverflow = VerticalWrapMode.Truncate;
 
             choiceInfo.gameObject.SetActive(false);
             choiceRoot.gameObject.SetActive(false);
+        }
 
-            root.gameObject.SetActive(false);
+        private static RectTransform CreatePanel(
+            Transform parent,
+            string name,
+            float width)
+        {
+            RectTransform panel = CreateRect(parent, name);
 
-            return root.gameObject.AddComponent<ProgressionDebugUIRoot>();
+            Image background = panel.gameObject.AddComponent<Image>();
+            background.color = new Color(0.06f, 0.07f, 0.09f, 0.94f);
+
+            LayoutElement element = panel.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = width;
+            element.flexibleHeight = 1f;
+
+            VerticalLayoutGroup layout =
+                panel.gameObject.AddComponent<VerticalLayoutGroup>();
+
+            layout.padding = new RectOffset(14, 14, 14, 14);
+            layout.spacing = 5f;
+            layout.childControlHeight = true;
+            layout.childControlWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childForceExpandWidth = true;
+
+            return panel;
         }
 
         public static Button CreateButton(
@@ -172,7 +256,7 @@ namespace Ked.Progression.Debugging.UI
         {
             RectTransform rect = CreateRect(parent, name);
             LayoutElement layout = rect.gameObject.AddComponent<LayoutElement>();
-            layout.preferredHeight = 34f;
+            layout.preferredHeight = 30f;
 
             Image image = rect.gameObject.AddComponent<Image>();
             image.color = new Color(0.20f, 0.23f, 0.29f, 1f);
@@ -184,7 +268,7 @@ namespace Ked.Progression.Debugging.UI
                 rect,
                 "Label",
                 label,
-                15,
+                14,
                 0f);
 
             Stretch(text.rectTransform);

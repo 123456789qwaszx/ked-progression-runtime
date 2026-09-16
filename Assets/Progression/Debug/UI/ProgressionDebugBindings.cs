@@ -25,20 +25,25 @@ namespace Ked.Progression.Debugging.UI
 
             _bound = true;
 
-            _view.NewGameClicked += _host.RequestNewGame;
-            _view.ContinueClicked += _host.RequestContinue;
-            _view.ManualLoadClicked += _host.RequestManualLoad;
-            _view.StopClicked += _host.RequestStop;
-            _view.CompleteNodeClicked += _host.RequestCompleteNode;
-            _view.EpisodeSkipClicked += _host.RequestEpisodeSkip;
-            _view.RollbackClicked += _host.RequestRollback;
-            _view.BacklogJumpClicked += _host.RequestBacklogJump;
+            _view.NewGameClicked += HandleNewGameClicked;
+            _view.ContinueClicked += HandleContinueClicked;
+            _view.ManualLoadClicked += HandleManualLoadClicked;
+            _view.StopClicked += HandleStopClicked;
+            _view.CompleteNodeClicked += HandleCompleteNodeClicked;
+            _view.EpisodeSkipClicked += HandleEpisodeSkipClicked;
+            _view.RollbackClicked += HandleRollbackClicked;
+            _view.BacklogJumpClicked += HandleBacklogJumpClicked;
             _view.ChoiceClicked += _host.SelectChoice;
 
             _host.StateChanged += _view.SetState;
             _host.ChoicesChanged += HandleChoicesChanged;
 
             _view.SetState(_host.CurrentSnapshot);
+            _view.SetTransitionReport(
+                "Reference parity\n" +
+                ProgressionDebugReferenceRules.Reference +
+                "\n\n버튼을 누르면 Target의 실제 상태와 Reference 규칙의 차이를 여기에 표시한다.");
+
             HandleChoicesChanged(
                 _host.CurrentOptions,
                 _host.HiddenChoiceCount);
@@ -51,18 +56,72 @@ namespace Ked.Progression.Debugging.UI
 
             _bound = false;
 
-            _view.NewGameClicked -= _host.RequestNewGame;
-            _view.ContinueClicked -= _host.RequestContinue;
-            _view.ManualLoadClicked -= _host.RequestManualLoad;
-            _view.StopClicked -= _host.RequestStop;
-            _view.CompleteNodeClicked -= _host.RequestCompleteNode;
-            _view.EpisodeSkipClicked -= _host.RequestEpisodeSkip;
-            _view.RollbackClicked -= _host.RequestRollback;
-            _view.BacklogJumpClicked -= _host.RequestBacklogJump;
+            _view.NewGameClicked -= HandleNewGameClicked;
+            _view.ContinueClicked -= HandleContinueClicked;
+            _view.ManualLoadClicked -= HandleManualLoadClicked;
+            _view.StopClicked -= HandleStopClicked;
+            _view.CompleteNodeClicked -= HandleCompleteNodeClicked;
+            _view.EpisodeSkipClicked -= HandleEpisodeSkipClicked;
+            _view.RollbackClicked -= HandleRollbackClicked;
+            _view.BacklogJumpClicked -= HandleBacklogJumpClicked;
             _view.ChoiceClicked -= _host.SelectChoice;
 
             _host.StateChanged -= _view.SetState;
             _host.ChoicesChanged -= HandleChoicesChanged;
+        }
+
+        private void HandleNewGameClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.NewGame);
+            _host.RequestNewGame();
+        }
+
+        private void HandleContinueClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.Continue);
+            _host.RequestContinue();
+        }
+
+        private void HandleManualLoadClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.ManualLoad);
+            _host.RequestManualLoad();
+        }
+
+        private void HandleStopClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.Stop);
+            _host.RequestStop();
+        }
+
+        private void HandleCompleteNodeClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.CompleteNode);
+            _host.RequestCompleteNode();
+        }
+
+        private void HandleEpisodeSkipClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.EpisodeSkip);
+            _host.RequestEpisodeSkip();
+        }
+
+        private void HandleRollbackClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.Rollback);
+            _host.RequestRollback();
+        }
+
+        private void HandleBacklogJumpClicked()
+        {
+            Show(ProgressionDebugReferenceRules.Transition.BacklogJump);
+            _host.RequestBacklogJump();
+        }
+
+        private void Show(ProgressionDebugReferenceRules.Transition transition)
+        {
+            _view.SetTransitionReport(
+                ProgressionDebugReferenceRules.Describe(transition));
         }
 
         private void HandleChoicesChanged(
