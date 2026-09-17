@@ -341,7 +341,7 @@ cancellationToken.ThrowIfCancellationRequested()
 
 ## Core — 활성
 
-`SceneProgressionTests`는 현재 `SceneProgress`를 실제로 테스트한다.
+`SceneProgressTests`는 현재 `SceneProgress`를 실제로 테스트한다.
 
 주요 범위:
 

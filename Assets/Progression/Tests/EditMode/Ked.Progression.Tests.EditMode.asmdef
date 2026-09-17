@@ -1,7 +1,7 @@
 {
   "name": "Ked.Progression.Tests.EditMode",
   "rootNamespace": "Ked.Progression.Tests",
-  "references": ["Ked.Progression.Runtime"],
+  "references": ["Ked.Progression"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

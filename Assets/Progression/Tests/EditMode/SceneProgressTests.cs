@@ -3,7 +3,7 @@ using NUnit.Framework;
 
 namespace Ked.Progression.Tests
 {
-    public sealed class SceneProgressionTests
+    public sealed class SceneProgressTests
     {
         [Test]
         public void Rewind_removes_future_pending_choices()

@@ -423,7 +423,7 @@ Console compile error 없음 확인
 우선 확인:
 
 ```text
-SceneProgressionTests
+SceneProgressTests
 SceneRunnerTests
 ```
 

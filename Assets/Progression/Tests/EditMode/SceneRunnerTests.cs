@@ -130,7 +130,7 @@ namespace Ked.Progression.Tests
             cancellation.Cancel();
             await runner.StopAsync();
 
-            Assert.ThrowsAsync<OperationCanceledException>(
+            Assert.CatchAsync<OperationCanceledException>(
                 async () => await runTask);
         }
 

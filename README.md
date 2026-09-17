@@ -1,6 +1,12 @@
 # ked-progression-runtime
 
-`ked-progression-runtime`은 `ked-presentation-runtime/refactor/offline-local-save`의 Progression 동작을 별도 Unity 환경에서 재현하고, 비주얼 노벨 진행 로직의 **판정 규칙과 생명주기 순서**를 테스트 가능한 형태로 고정하기 위한 프로젝트다.
+`ked-progression-runtime`은 비주얼 노벨 진행 로직의 **판정 규칙과 생명주기 순서**를 소유하는 저장소다.
+Progression Core와 Runtime의 원본이 여기 있고, 실제 게임인 `ked-presentation-runtime`이 그 Host 구현을 제공한다.
+
+경계를 고정할 때의 behavioral reference는 `ked-presentation-runtime/refactor/offline-local-save`다.
+Reference를 그대로 복제하는 것이 목적이 아니라, **Reference가 명시한 Progression invariant를 순수한 Core/Runtime으로 보존하는 것**이 목적이다.
+
+> 진행 코어의 이전 원본이던 `ked-progression`은 더 이상 쓰지 않는다. 대조는 이 저장소를 기준으로 한다.
 
 ---
 # 1. Progression 계층
@@ -140,7 +146,7 @@ Scenario
 Chapter 소유 데이터.
 
 ```text
-ChapterProgression
+ChapterDefinition
 Episode graph
 Episode definitions
 Stat definitions
@@ -442,7 +448,7 @@ Progression Core
 무엇이 유효한 진행/상태인가?
 
 Spec / State / Transition
-SceneProgression
+SceneProgress
 ScenePendingHistory
 
         ↓
@@ -453,7 +459,7 @@ Progression Runtime
 
 ProgressionDriver
 SceneRunner
-SceneTransaction
+SceneRunContext
 
         ↓
 
@@ -480,14 +486,14 @@ Core는 순수한 진행 상태와 판정만 소유한다.
 주요 타입:
 
 ```text
-ChapterProgression
+ChapterDefinition
 EpisodeNode
 EpisodeOption
 ProgressionState
 ChapterTransition
 ChapterAdvance
 ResolvedOption
-SceneProgression
+SceneProgress
 ScenePendingHistory
 ```
 
@@ -514,30 +520,30 @@ ProgressionDriver
     ↓
 SceneRunner
     ↓
-SceneTransaction
+SceneRunContext
     ↓
-SceneProgression
+SceneProgress
 ```
 
 - `ProgressionDriver`: Chapter 실행 수명과 전체 cancellation을 소유한다.
 - `SceneRunner`: Scene/Episode 실행 순서, 선택 대기, replay, commit 시점을 소유한다.
-- `SceneTransaction`: 실행 중인 Scene의 `Phase`, `ReplayPending`, restore input을 소유한다.
-- `SceneProgression`: Scene 진행 데이터의 source of truth다.
+- `SceneRunContext`: 실행 중인 Scene의 `ReplayPending`과 restore input을 소유한다.
+- `SceneProgress`: Scene 진행 데이터의 source of truth다.
 
 `ChapterSession`, `ProgressionBoundaries` 같은 별도의 두 번째 실행기는 유지하지 않는다.
 
 ---
 
-# 2. SceneProgression과 SceneTransaction
+# 2. SceneProgress와 SceneRunContext
 
-## SceneProgression
+## SceneProgress
 
 Scene 하나의 순수 진행 상태다.
 
 소유:
 
 ```text
-Chapter
+Definition
 EntryState
 SceneId
 RootEpisodeId
@@ -555,7 +561,7 @@ WorkingState
 3. `WorkingState = EntryState + 현재 소비된 pending choices`다.
 4. Rollback은 pending 일부를 제거한 뒤 WorkingState를 다시 계산한다.
 5. Replay는 같은 Scene을 유지한 채 root cursor로 돌아간다.
-6. 정상 Scene 완료에서만 `Commit()`한다.
+6. 정상 Scene 완료에서만 `CreateCommitResult()`로 확정한다.
 
 Commit 결과는 `SceneCommitResult`로 투영한다.
 
@@ -567,19 +573,18 @@ WatchedEpisodeIds
 
 Core는 여기까지만 계산한다. Save/report 실행은 Runtime/Host 책임이다.
 
-## SceneTransaction
+## SceneRunContext
 
-`SceneProgression`을 감싼 Runtime 상태다.
+`SceneProgress`를 감싼 Runtime 상태다.
 
 ```text
-SceneTransaction
-├─ SceneProgression Progression
-├─ SceneRunPhase Phase
+SceneRunContext
+├─ SceneProgress Progress
 ├─ bool ReplayPending
 └─ RestorePath
 ```
 
-Chapter/EntryState/CurrentEpisode/PendingPath를 별도로 복제하지 않고 `SceneProgression`에 위임한다.
+Chapter/EntryState/CurrentEpisode/PendingPath를 별도로 복제하지 않고 `SceneProgress`에 위임한다.
 
 ---
 
@@ -625,7 +630,7 @@ Chapter 실행 경계다.
 Start
 → Chapter preparation
 → Chapter Enter report
-→ SceneTransaction 반복 생성
+→ SceneRunContext 반복 생성
 → SceneRunner.RunAsync
 → committed state를 다음 Scene EntryState로 전달
 → 마지막 Scene 완료
@@ -657,7 +662,7 @@ Scene Enter
 → same Scene continue / Scene commit
 ```
 
-Runtime은 `ScenePendingHistory`를 직접 접근하지 않는다. 모든 진행 상태 변경은 `SceneProgression` API를 통한다.
+Runtime은 `ScenePendingHistory`를 직접 접근하지 않는다. 모든 진행 상태 변경은 `SceneProgress` API를 통한다.
 
 ## Replay
 
@@ -696,7 +701,7 @@ public readonly struct ScenePathStep
 }
 ```
 
-`SceneProgression.TryRestorePath()`는 Scene root부터 다음을 검증한다.
+`SceneProgress.TryRestorePath()`는 Scene root부터 다음을 검증한다.
 
 ```text
 FromEpisodeId == cursor
@@ -785,7 +790,7 @@ Console 태그:
 7. Stop/New Game/Manual Load의 기존 run은 Scene을 commit하지 않는다.
 8. stale/cancel된 실행 결과는 commit/report/다음 Scene 진입을 만들면 안 된다.
 9. Episode Skip은 progression cursor를 직접 변경하지 않는다.
-10. `SceneProgression`은 순수 상태 규칙, `SceneRunner`는 실행 순서를 소유한다.
+10. `SceneProgress`는 순수 상태 규칙, `SceneRunner`는 실행 순서를 소유한다.
 
 ---
 
@@ -795,7 +800,7 @@ Console 태그:
 
 ```text
 Reference
-→ 원본 ked-presentation-runtime은 어떻게 동작하는가?
+→ Reference인 ked-presentation-runtime은 어떻게 동작하는가?
 
 Implemented
 → progression-runtime에 무엇을 반영했는가?

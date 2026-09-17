@@ -11,7 +11,7 @@ namespace Ked.Progression.Tests
         {
             Assert.That(
                 typeof(ProgressionDriver).Assembly.GetName().Name,
-                Is.EqualTo("Ked.Progression.Runtime"));
+                Is.EqualTo("Ked.Progression"));
 
             yield return null;
         }

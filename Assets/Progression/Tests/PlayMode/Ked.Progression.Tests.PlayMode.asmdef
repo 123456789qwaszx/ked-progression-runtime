@@ -1,7 +1,7 @@
 {
   "name": "Ked.Progression.Tests.PlayMode",
   "rootNamespace": "Ked.Progression.Tests",
-  "references": ["Ked.Progression.Runtime"],
+  "references": ["Ked.Progression"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
