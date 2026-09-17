@@ -21,6 +21,7 @@ namespace Ked.Progression
         private readonly IChapterOptionsView _options;
         private readonly ISceneReplayState _replayState;
         private readonly IRollbackHistory _rollbackHistory;
+        private readonly IScenePersistence _persistence;
         private readonly IProgressionReporter _reporter;
         private readonly ISceneBacklog _backlog;
         private readonly IProgressionLog _log;
@@ -30,6 +31,7 @@ namespace Ked.Progression
             IChapterOptionsView options,
             ISceneReplayState replayState,
             IRollbackHistory rollbackHistory,
+            IScenePersistence persistence,
             IProgressionReporter reporter,
             ISceneBacklog backlog,
             IProgressionLog log = null)
@@ -38,6 +40,7 @@ namespace Ked.Progression
             _options = options;
             _replayState = replayState;
             _rollbackHistory = rollbackHistory;
+            _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             _reporter = reporter;
             _backlog = backlog;
             _log = log ?? NullProgressionLog.Instance;
@@ -119,6 +122,11 @@ namespace Ked.Progression
             _backlog.MarkSceneStart();
 
             cancellationToken.ThrowIfCancellationRequested();
+
+            _persistence.EnterScene(
+                ctx.Progress.Definition.ChapterId,
+                ctx.Progress.SceneId,
+                ctx.Progress.EntryState);
 
             _reporter.ReportSceneEntered(
                 ctx.Progress.Definition.ChapterId,
@@ -380,6 +388,12 @@ namespace Ked.Progression
             _log.Info(
                 $"[장면] 확정 — 선택 {commitResult.Choices.Count}개, " +
                 $"시청 {commitResult.WatchedEpisodeIds.Count}개 → {commitResult.State.CurrentEpisodeId}");
+
+            _persistence.CommitScene(
+                ctx.Progress.Definition.ChapterId,
+                ctx.Progress.SceneId,
+                commitResult,
+                outcome);
 
             _reporter.ReportSceneCommitted(
                 ctx.Progress.Definition.ChapterId,

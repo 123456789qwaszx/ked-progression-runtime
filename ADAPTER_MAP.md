@@ -45,7 +45,8 @@ Yarn / Stage / Save / Playthrough 같은 외부 책임이다
 | `IRollbackHistory` | `RollbackHistory` | `THIN ADAPTER` | `RollbackPoint` 전체가 아니라 `historyIndex`만 Runtime에 노출 |
 | `ISceneBacklog` | `BacklogRecorder` | `DIRECT` | Runtime은 `MarkSceneStart()`만 필요 |
 | `IChapterLifecycle` | `ProgressionYarnBridge` + Host-staged `YarnProject`/restore variables | `THIN HOST ADAPTER` | Chapter 진입 시 Yarn 초기화/복원은 Host 책임 |
-| `IProgressionReporter` | Reference reporter와 직접 대응하지 않음 | `OBSERVER` | Target에서는 Save 작업을 수행하지 않는 lifecycle 관찰 포트로 유지 |
+| `IScenePersistence` | `SaveCoordinator.ReportSceneEntered/Committed` | `THIN HOST ADAPTER` | Progression 결과와 Yarn/Backlog snapshot을 조합하여 다음 Scene 전에 확정 |
+| `IProgressionReporter` | Reference reporter와 직접 대응하지 않음 | `OBSERVER` | Save 작업을 수행하지 않는 lifecycle 관찰 포트로 유지 |
 
 ---
 
@@ -261,95 +262,32 @@ Runtime contract에 Yarn 타입을 다시 넣지 않는다.
 
 ---
 
-# 9. IProgressionReporter — Save sink가 아니다
+# 9. IProgressionReporter — lifecycle 관찰
 
-Reference의 `IProgressionReporter`는 실제로 Save 경계였다.
+`IProgressionReporter`는 Chapter/Scene/Episode의 정상 lifecycle을 관찰한다. Debug, characterization, analytics에 사용하며 저장 실패 여부를 결정하지 않는다.
 
-```text
-ReportSceneEntered(SceneEntryReport)
-ReportSceneCommitted(SceneCommitReport)
-```
-
-그리고 `SceneEntryReport` / `SceneCommitReport`에는 Progression 데이터뿐 아니라 다음 Presentation/Save 데이터도 함께 들어 있었다.
-
-```text
-YarnVariableSnapshot
-YarnChoices
-Backlog
-BacklogSerialStart
-ChapterCompleted
-```
-
-Reference `SaveCoordinator`가 이 report를 직접 소비하여 `SceneCheckpoint`, `SceneRecord`, `LocalSaveFile`을 만들었다.
-
-Target의 `IProgressionReporter`는 의도적으로 다르다.
-
-```text
-Chapter Enter/Exit
-Scene Enter/Commit/Exit
-Episode Enter/Exit
-```
-
-그리고 주석대로 Yarn/Stage/Save 작업을 하지 않는 lifecycle observer다.
-
-따라서 Production 연결에서:
-
-```text
-Target IProgressionReporter
-→ SaveCoordinator 직접 구현
-```
-
-으로 되돌리지 않는다.
-
-올바른 방향은 Host가 별도의 Save orchestration을 갖는 것이다.
-
-```text
-Progression commit result
-+
-Host가 가진 Presentation snapshot
-  - Yarn variables
-  - Yarn choices
-  - Backlog
-  - backlog serial
-+
-Playthrough / Save policy
-        ↓
-SaveCoordinator commit
-```
-
-Target reporter는 Debug/characterization/analytics 같은 관찰 역할로 유지한다.
+기존 `SaveCoordinator`가 이 인터페이스를 직접 구현하던 구조는 제거한다. 저장은 다음 `IScenePersistence` 계약으로 연결한다.
 
 ---
 
-# 10. Save 재연결에서 필요한 별도 경계
+# 10. IScenePersistence — Scene 저장 실행 경계
 
-Reference의 저장은 Scene commit 순간 다음을 한 번에 모았다.
+Reference는 Scene 진입과 정상 커밋 순간 Progression과 Presentation 정보를 함께 모아 저장했다. Target은 순수 진행 데이터만 계약으로 전달하고 Host가 기존 snapshot을 조합한다.
 
 ```text
-Progression
-- committed choices
-- watched episode ids
-- committed ProgressionState
+EnterScene(chapterId, sceneId, entryState)
+→ Host가 Yarn variables / backlog serial을 캡처
+→ SaveCoordinator의 SceneCheckpoint 준비
 
-Presentation
-- Yarn variables
-- Yarn choices
-- Backlog
-- backlog serial
-
-Save/Application
-- PlaythroughId
-- SceneCheckpoint
-- SceneRecord
-- ChapterCompleted
-- timestamp / play seconds
+CommitScene(chapterId, sceneId, SceneCommitResult, outcome)
+→ Host가 Yarn variables / Yarn choices / Backlog를 캡처
+→ ChapterCompleted = outcome == ChapterEnded
+→ SaveCoordinator가 LocalSaveFile 확정
 ```
 
-이 세 덩어리를 다시 `IProgressionReporter` 하나에 밀어 넣지 않는다.
+`CommitScene`이 성공한 뒤에만 Runtime이 Scene Commit/Exit을 관찰하고 다음 Scene으로 진행한다. 저장 실패는 현재 실행 실패이며 이전 디스크 snapshot을 유지한다. Stop과 same-Scene replay는 이 커밋 계약을 호출하지 않는다.
 
-Production Host에서 Scene commit을 관찰한 뒤 필요한 snapshot을 조합하는 별도 orchestration을 둔다.
-
-이 orchestration의 구체 API는 실제 `ked-presentation-runtime` 재연결 단계에서 정하되, `ked-progression-runtime`의 Core/Runtime contract는 변경하지 않는 것을 기본값으로 한다.
+Runtime 계약에는 Yarn 타입, 파일 형식, PlaythroughId를 넣지 않는다. 구체 조립은 production Host의 `ProgressionSaveBridge`가 맡는다.
 
 ---
 
@@ -390,6 +328,9 @@ ISceneBacklog
 IChapterLifecycle
 → Yarn chapter setup thin Host adapter
 
+IScenePersistence
+→ ProgressionSaveBridge → SaveCoordinator
+
 IProgressionReporter
 → lifecycle observer only
 ```
@@ -398,9 +339,12 @@ IProgressionReporter
 
 # 12. 실제 재연결 작업 순서
 
-## A1 — assembly/package 연결
+## A1 — Runtime 소스 이식
 
-- `ked-presentation-runtime`에서 `ked-progression-runtime` assembly를 참조할 수 있게 한다.
+- UPM을 사용하지 않는다.
+- 검증한 `ked-progression-runtime` Runtime 소스와 asmdef를 통합 브랜치로 직접 이식한다.
+- 이식 원본 SHA와 파일 목록을 기록한다.
+- presentation manifest의 `com.ked.progression-runtime` 참조를 제거한다.
 - 기존 Reference branch를 직접 변경 대상으로 삼지 않는다.
 - 실제 통합 작업용 branch에서 진행한다.
 
@@ -429,7 +373,7 @@ adapter에는 Progression 판정 로직을 넣지 않는다.
 Reference의 `SceneCommitReport` 조립 책임을 해체한다.
 
 ```text
-Progression commit 관측
+IScenePersistence에 전달된 entry/commit
 +
 Presentation snapshot capture
 +
@@ -463,9 +407,7 @@ Stop / Title Exit
 
 # 13. 현재 결론
 
-현재 contract 분석에서는 `ked-progression-runtime`에 Production 재연결을 위해 새 Runtime API를 추가해야 할 근거가 발견되지 않았다.
-
-현재 contract로 Reference 동작을 다음처럼 연결할 수 있다.
+Production 재연결에는 Scene 저장 성공과 다음 Scene 진행의 순서를 보장하는 `IScenePersistence`가 필요하다. 나머지 Runtime은 기존 계약을 유지한다.
 
 ```text
 DIRECT
@@ -477,19 +419,17 @@ THIN ADAPTER
 - ISceneReplayState
 - IRollbackHistory
 - IChapterLifecycle
+- IScenePersistence
 
 OBSERVER
 - IProgressionReporter
 
 OUTSIDE RUNTIME
-- SavedLoadPlan.YarnChoices
-- SavedLoadPlan.Target
+- SavedLoadPlan.YarnChoices / Target
 - Yarn variables
 - Stage / PresentationScope
 - Save slot / Playthrough / fork
-- SceneRecord / LocalSaveFile commit
+- SceneRecord / LocalSaveFile 형식
 ```
 
-따라서 다음 구현 단계의 원칙은 하나다.
-
-> Progression Runtime을 더 키우지 말고, Host에서 기존 Presentation/Save 객체를 현재 contract에 맞춰 재조립한다.
+Runtime은 순수 entry/commit 데이터와 실행 순서만 제공한다. Host는 `ProgressionSaveBridge`에서 Presentation snapshot과 기존 SaveCoordinator를 조합한다.

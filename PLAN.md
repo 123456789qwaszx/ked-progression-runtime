@@ -508,6 +508,9 @@ ScenePathStep restore path 절단
 same-Scene replay
 post-playback cancellation guard
 EventKey watched filter
+IScenePersistence entry/commit 실행 계약
+저장 성공 뒤에만 Scene Commit/Exit 관찰 및 다음 Scene 진행
+일반 실행 오류를 Completion fault로 전달
 Core characterization source
 Runtime characterization source
 mid-Scene Continue/Manual Load Debug fixture
@@ -529,11 +532,12 @@ Restore path는 first Scene only
 SavedLoadPlan.Path 최소 좌표/검증 규칙
 EventKey watched semantics
 cross-Scene backlog는 Runtime replay가 아닌 Host/Save transition
+Stop/replay는 Scene persistence commit을 호출하지 않음
 ```
 
 ## Gap
 
-남은 것은 Progression 의미 설계보다 **실행 검증과 실제 Host adapter 연결**이다.
+남은 것은 **실행 검증과 실제 Host adapter 연결**이다.
 
 ```text
 Unity Editor compile 확인
@@ -543,6 +547,8 @@ typed parity text가 화면에서 잘리는지 확인
 실제 Yarn variables / ChoiceHistory / line target restore
 Stage / PresentationScope replay 연결
 SaveCoordinator / Playthrough fork adapter 연결
+IScenePersistence를 구현하는 ProgressionSaveBridge 연결
+저장 실패 시 다음 Scene에 진입하지 않는 production 검증
 ```
 
 ---
@@ -554,9 +560,9 @@ SaveCoordinator / Playthrough fork adapter 연결
 2. EditMode Test Runner
 3. PlayMode Debug Harness smoke test
 4. 실패가 있으면 같은 기능 단위로 수정
-5. ked-presentation-runtime의 concrete 구현을 Target interface에 매핑
-6. 필요한 adapter만 설계
-7. 새 Runtime API는 기존 contract로 표현 불가능한 경우에만 추가
+5. ked-presentation-runtime에 Runtime 소스를 직접 이식
+6. concrete 구현을 Target interface에 매핑
+7. ProgressionSaveBridge로 기존 SaveCoordinator 연결
 8. Reference → Implemented → Parity → Gap → Plan Update 재점검
 ```
 
