@@ -12,6 +12,7 @@ namespace Ked.Progression.Debugging
         IChapterOptionsView,
         ISceneReplayState,
         IRollbackHistory,
+        IScenePersistence,
         IProgressionReporter,
         ISceneBacklog,
         IChapterLifecycle,
@@ -80,6 +81,7 @@ namespace Ked.Progression.Debugging
             };
 
             var runner = new SceneRunner(
+                this,
                 this,
                 this,
                 this,
@@ -464,6 +466,23 @@ namespace Ked.Progression.Debugging
         // ------------------------------------------------------------------
         // Lifecycle reporter
         // ------------------------------------------------------------------
+
+        public void EnterScene(
+            string chapterId,
+            string sceneId,
+            ProgressionState entryState)
+        {
+            Info($"[HOST][PERSIST] ENTER scene={sceneId}");
+        }
+
+        public void CommitScene(
+            string chapterId,
+            string sceneId,
+            SceneCommitResult result,
+            SceneRunOutcome outcome)
+        {
+            Info($"[HOST][PERSIST] COMMIT scene={sceneId} outcome={outcome}");
+        }
 
         public void ReportChapterEntered(string chapterId, ProgressionState state)
         {

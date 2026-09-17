@@ -84,10 +84,13 @@ namespace Ked.Progression
             }
             catch (OperationCanceledException)
                 when (cancellation.IsCancellationRequested)
-            { // _log.Info("[RUN] CANCELLED — 현재 Scene pending은 commit하지 않는다.");
+            {
+                _log.Info("[RUN] CANCELLED — 현재 Scene pending은 commit하지 않는다.");
             }
             catch (Exception error)
-            { // _log.Error($"[RUN] FAULTED\n{error}");
+            {
+                _log.Error($"[RUN] FAULTED\n{error}");
+                throw;
             }
             finally
             {

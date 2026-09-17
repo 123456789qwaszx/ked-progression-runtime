@@ -23,6 +23,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 new FakeSceneReplayState(),
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 reporter,
                 backlog);
 
@@ -50,6 +51,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 replayState,
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 new FakeProgressionReporter(),
                 new FakeSceneBacklog());
 
@@ -74,6 +76,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 replayState,
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 new FakeProgressionReporter(),
                 new FakeSceneBacklog());
 
@@ -99,6 +102,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 new FakeSceneReplayState(),
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 reporter,
                 new FakeSceneBacklog());
 
@@ -130,7 +134,7 @@ namespace Ked.Progression.Tests
             cancellation.Cancel();
             await runner.StopAsync();
 
-            Assert.ThrowsAsync<OperationCanceledException>(
+            Assert.CatchAsync<OperationCanceledException>(
                 async () => await runTask);
         }
 
@@ -148,6 +152,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 new FakeSceneReplayState(),
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 reporter,
                 new FakeSceneBacklog());
 
@@ -194,6 +199,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 replayState,
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 reporter,
                 new FakeSceneBacklog());
 
@@ -226,6 +232,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 new FakeSceneReplayState(),
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 reporter,
                 new FakeSceneBacklog());
 
@@ -260,6 +267,7 @@ namespace Ked.Progression.Tests
                 new FakeOptionsView(),
                 new FakeSceneReplayState(),
                 new FakeRollbackHistory(),
+                NullScenePersistence.Instance,
                 reporter,
                 new FakeSceneBacklog());
 
@@ -279,6 +287,61 @@ namespace Ked.Progression.Tests
             Assert.That(reporter.SceneExitedCount, Is.Zero);
             Assert.That(reporter.Events, Does.Not.Contain("SceneCommit:scene-1"));
             Assert.That(reporter.Events, Does.Not.Contain("SceneExit:scene-1"));
+        }
+
+        [Test]
+        public void RunAsync_PersistenceFailure_DoesNotReportCommitOrExit()
+        {
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
+            var reporter = new FakeProgressionReporter();
+            var persistence = new FailingScenePersistence();
+
+            var runner = new SceneRunner(
+                new FakeScenePlayback(),
+                new FakeOptionsView(),
+                new FakeSceneReplayState(),
+                new FakeRollbackHistory(),
+                persistence,
+                reporter,
+                new FakeSceneBacklog());
+
+            var ctx = new SceneRunContext(
+                new SceneProgress(chapter, chapter.CreateEntryState()));
+
+            Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await runner.RunAsync(ctx, default));
+
+            Assert.That(persistence.EnterCount, Is.EqualTo(1));
+            Assert.That(persistence.CommitCount, Is.EqualTo(1));
+            Assert.That(reporter.SceneCommittedCount, Is.Zero);
+            Assert.That(reporter.SceneExitedCount, Is.Zero);
+        }
+
+        [Test]
+        public void Driver_PersistenceFailure_FaultsCompletion()
+        {
+            ChapterDefinition chapter = TestChapterFactory.CreateTwoSceneChapter();
+
+            var runner = new SceneRunner(
+                new FakeScenePlayback(),
+                new FakeOptionsView(),
+                new FakeSceneReplayState(),
+                new FakeRollbackHistory(),
+                new FailingScenePersistence(),
+                new FakeProgressionReporter(),
+                new FakeSceneBacklog());
+
+            var driver = new ProgressionDriver(
+                runner,
+                new FakeChapterLifecycle(),
+                new FakeProgressionReporter());
+
+            driver.Start(chapter, chapter.CreateEntryState());
+
+            Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await driver.Completion);
+
+            Assert.That(driver.IsRunning, Is.False);
         }
     }
 
@@ -542,6 +605,30 @@ namespace Ked.Progression.Tests
             EpisodeNode episode)
         {
             Events.Add($"EpisodeExit:{episode.EpisodeId}");
+        }
+    }
+
+    internal sealed class FailingScenePersistence : IScenePersistence
+    {
+        public int EnterCount { get; private set; }
+        public int CommitCount { get; private set; }
+
+        public void EnterScene(
+            string chapterId,
+            string sceneId,
+            ProgressionState entryState)
+        {
+            EnterCount++;
+        }
+
+        public void CommitScene(
+            string chapterId,
+            string sceneId,
+            SceneCommitResult result,
+            SceneRunOutcome outcome)
+        {
+            CommitCount++;
+            throw new InvalidOperationException("저장 실패");
         }
     }
 
