@@ -202,21 +202,10 @@ namespace Ked.Progression
 
             SceneChoice choice = resolution.Choice;
 
-            // Via 도중 replay가 걸려도 이미 고른 경로를 다시 따라갈 수 있어야 하므로
-            // 새 선택은 Via 재생 전에 pending history에 기록한다.
+            // 커서를 옮기기 전에 기록한다 — 기록과 이동 사이에서 replay가 걸려도
+            // 이미 고른 경로를 그대로 다시 따라갈 수 있어야 한다.
             if (choice.Source != SceneChoiceSource.Recorded)
                 progression.RecordChoice(choice, _rollbackHistory.LastHistoryIndex);
-
-            if (choice.Option.HasVia)
-            {
-                await PlayNodeAsync(
-                    choice.Option.ViaNodeId,
-                    "연출",
-                    cancellationToken);
-
-                if (scene.ReplayPending)
-                    return SceneStepKind.Replay;
-            }
 
             progression.MoveTo(choice.Option.TargetEpisodeId);
 

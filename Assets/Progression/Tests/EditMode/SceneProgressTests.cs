@@ -210,10 +210,18 @@ namespace Ked.Progression.Tests
                     scene.Definition,
                     scene.WorkingState);
 
-            scene.Advance(
-                advance.Options[0],
-                SceneChoiceSource.User,
+            ResolvedOption selected = advance.Options[0];
+
+            // SceneRunner와 같은 순서로 민다 — 기록한 뒤 커서를 옮긴다.
+            scene.RecordChoice(
+                new SceneChoice(
+                    selected.Option,
+                    scene.CurrentEpisodeId,
+                    selected.SourceIndex,
+                    SceneChoiceSource.User),
                 rollbackAnchor);
+
+            scene.MoveTo(selected.Option.TargetEpisodeId);
         }
 
         private static ChapterDefinition CreateChapter()

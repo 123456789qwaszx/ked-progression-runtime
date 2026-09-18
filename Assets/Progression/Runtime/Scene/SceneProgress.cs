@@ -23,7 +23,6 @@ namespace Ked.Progression
         public string RootEpisodeId { get; }
         public string CurrentEpisodeId { get; private set; }
 
-        public EpisodeNode RootEpisode => GetEpisode(RootEpisodeId);
         public EpisodeNode CurrentEpisode => GetEpisode(CurrentEpisodeId);
 
         public ProgressionState WorkingState =>
@@ -53,11 +52,11 @@ namespace Ked.Progression
             _history.NoteWatched(CurrentEpisode, rollbackAnchor);
         
         // 실제로 선택된 간선을 pending history에 기록한다.
-        // Via 재생 전에도 replay path를 보존해야 하므로 cursor 이동과 분리한다.
+        // "무엇을 골랐나"와 "지금 어디인가"는 다른 사실이므로 cursor 이동과 나눠 둔다.
         public void RecordChoice(SceneChoice choice, int rollbackAnchor) =>
             _history.RecordChoice(choice, rollbackAnchor);
-        
-        // playback/Via가 끝난 뒤 Runtime이 실제 Episode cursor를 이동시킨다.
+
+        // 기록이 끝난 뒤 Runtime이 실제 Episode cursor를 옮긴다.
         public void MoveTo(string episodeId) => CurrentEpisodeId = episodeId;
         
         // 저장된 Scene 선택 경로가 현재 Chapter 그래프에서도 여전히 유효한지 검사하고,
@@ -98,7 +97,7 @@ namespace Ked.Progression
         }
 
         // Load/replay에서 저장된 선택 하나를 다시 소비한다.
-        // history cursor만 전진시키고 실제 Episode cursor 이동은 Runtime이 Via 처리 뒤 수행한다.
+        // history cursor만 전진시키고 실제 Episode cursor 이동은 Runtime이 뒤이어 수행한다.
         public SceneChoice TakeRecordedChoice(int rollbackAnchor)
         {
             return _history.TakeRecordedChoice(rollbackAnchor);
@@ -143,26 +142,5 @@ namespace Ked.Progression
             throw new InvalidOperationException(
                 $"에피소드 '{episodeId}'가 챕터 '{Definition.ChapterId}'에 없다.");
         }
-        
-        #region Test
-        
-        // Core 테스트나 단순 호출자를 위한 원자적 편의 API.
-        // Runtime SceneRunner는 Via 재생 순서를 보존하기 위해 RecordChoice/MoveTo를 나눠 사용한다.
-        public void Advance(ResolvedOption selected, SceneChoiceSource source, int rollbackAnchor)
-        {
-            if (!selected.IsSelectable)
-                throw new ArgumentException("잠긴 선택지는 진행에 사용할 수 없다.", nameof(selected));
-
-            var choice = new SceneChoice(
-                selected.Option,
-                CurrentEpisodeId,
-                selected.SourceIndex,
-                source);
-
-            RecordChoice(choice, rollbackAnchor);
-            MoveTo(selected.Option.TargetEpisodeId);
-        }
-        
-        #endregion
     }
 }

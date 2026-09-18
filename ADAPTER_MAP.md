@@ -339,6 +339,18 @@ IProgressionReporter
 
 # 12. 실제 재연결 작업 순서
 
+```text
+A1 소스 이식        ✔ 2026-09-17   Assets/Scripts/Ked.Progression/
+A2 DIRECT 연결      ✔              ScenePlaybackSession · ChapterOptionsView · BacklogRecorder
+A3 THIN ADAPTER     ✔              ProgressionRollbackHistory · ProgressionReplayState · ProgressionChapterLifecycle
+A4 Save 분리        ✔              ProgressionSaveBridge : IScenePersistence
+A5 Launcher/조립    ✔              ProgressionLauncher · VNAppBootstrap
+A6 parity smoke     ☐ 남음         Unity 실행이 필요하다
+```
+
+이식된 쪽의 자동 검증은 초록이다 — `ProgressionCore` 41 PASS, `SaveLifecycle` 14 PASS.
+남은 것은 A6 하나이고, 그것만은 실제 Yarn/Stage/Save가 붙은 실행에서만 판정된다.
+
 ## A1 — Runtime 소스 이식
 
 - UPM을 사용하지 않는다.

@@ -13,7 +13,6 @@ namespace Ked.Progression
     public sealed class ProgressionDriver
     {
         private readonly SceneRunner _sceneRunner;
-        private readonly IChapterLifecycle _chapterLifecycle;
         private readonly IProgressionReporter _reporter;
         private readonly IProgressionLog _log;
 
@@ -31,14 +30,22 @@ namespace Ked.Progression
         public IReadOnlyList<CommittedChoice> PendingPath =>
             _currentContext?.Progress.PendingPath ?? Array.Empty<CommittedChoice>();
 
+        // 지금 이 순간의 진행 상태. 대사가 스탯을 읽는 유일한 통로다.
+        //
+        // 실행 중에는 WorkingState를 준다 — 간선 관문(ChapterTransition)이 보는 것과 같은 값이다.
+        // 둘이 다르면 "선택지는 잠겼는데 대사 조건은 통과"가 생기고, 그것은 화면에서 버그로 보이지 않는다.
+        //
+        // Scene 경계 사이처럼 실행 중인 Scene이 없으면 마지막 확정 상태를 준다.
+        // 실행 자체가 없으면 null이다 — 호출자가 그 뜻을 정한다.
+        public ProgressionState CurrentState =>
+            _currentContext?.Progress.WorkingState ?? _chapterState;
+
         public ProgressionDriver(
             SceneRunner sceneRunner,
-            IChapterLifecycle chapterLifecycle,
             IProgressionReporter reporter,
             IProgressionLog log = null)
         {
             _sceneRunner = sceneRunner;
-            _chapterLifecycle = chapterLifecycle;
             _reporter = reporter;
             _log = log ?? NullProgressionLog.Instance;
         }
@@ -77,7 +84,6 @@ namespace Ked.Progression
 
             try
             {
-                _chapterLifecycle.BeginChapter(_chapterDef);
                 _reporter.ReportChapterEntered(_chapterDef.ChapterId, _chapterState);
 
                 await RunChapterAsync(cancellation.Token);

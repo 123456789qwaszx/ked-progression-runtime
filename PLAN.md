@@ -373,15 +373,26 @@ Stop during Episode → no Commit/Exit
 Stop during Via with pending choice → no Commit/Exit
 ```
 
-중요:
+## 실행 확인 — 2026-09-17
+
+`Ked.Progression`은 `noEngineReferences: true`인 순수 C#이고 EditMode 테스트도 순수 NUnit이다.
+따라서 **Unity 없이 그대로 돌아간다.** 임시 csproj로 Runtime + Tests/EditMode를 컴파일해 실행했다.
 
 ```text
-테스트 소스가 활성화되어 있다는 것
-!=
-Unity Test Runner에서 PASS를 확인했다는 것
+EditMode  20 PASS   (SceneProgressTests · SceneRunnerTests · ScenePendingHistoryTests)
 ```
 
-현재 저장소에는 Unity 테스트 CI workflow가 없으므로 실제 실행 확인은 로컬 Unity Editor가 필요하다.
+이로써 "테스트 소스가 활성" != "PASS 확인"이던 간극은 EditMode 범위에서 닫혔다.
+
+남은 것은 두 가지다.
+
+```text
+Unity Editor compile     asmdef 배선과 Debug 어셈블리(uGUI)는 Editor에서만 확인된다
+PlayMode Debug smoke     ProgressionDebugHost는 Unity 실행이 필요하다
+```
+
+소비 저장소(`ked-presentation-runtime`)는 같은 소스를 CI 게이트로 세웠다 —
+`tests/ProgressionCore` + `.github/workflows/progression-core.yml`. 반입본이 갈리면 그쪽이 먼저 운다.
 
 ---
 
@@ -556,17 +567,24 @@ IScenePersistence를 구현하는 ProgressionSaveBridge 연결
 # 12. 다음 작업 순서
 
 ```text
-1. Unity Editor compile
-2. EditMode Test Runner
-3. PlayMode Debug Harness smoke test
-4. 실패가 있으면 같은 기능 단위로 수정
-5. ked-presentation-runtime에 Runtime 소스를 직접 이식
-6. concrete 구현을 Target interface에 매핑
-7. ProgressionSaveBridge로 기존 SaveCoordinator 연결
-8. Reference → Implemented → Parity → Gap → Plan Update 재점검
+1. Unity Editor compile                                   ☐ 남음
+2. EditMode Test Runner                                   ✔ dotnet으로 20 PASS (§8)
+3. PlayMode Debug Harness smoke test                      ☐ 남음
+4. 실패가 있으면 같은 기능 단위로 수정                        —
+5. ked-presentation-runtime에 Runtime 소스를 직접 이식        ✔ 2026-09-17
+6. concrete 구현을 Target interface에 매핑                   ✔ DIRECT 3 + adapter 5 + log 1
+7. ProgressionSaveBridge로 기존 SaveCoordinator 연결         ✔
+8. Reference → Implemented → Parity → Gap → Plan Update 재점검 ◐ G3 통로 10개 뒤에
 ```
 
-Unity 실행 결과를 확인하기 전까지 구조를 더 넓게 바꾸지 않는다.
+이식은 끝났고 소비 쪽 자동 검증도 초록이다.
+
+```text
+ked-presentation-runtime  ProgressionCore  41 PASS
+ked-presentation-runtime  SaveLifecycle    14 PASS
+```
+
+다만 **Unity 실행으로만 확인되는 것이 남아 있다**(1·3). 그 결과를 보기 전까지 구조를 더 넓게 바꾸지 않는다.
 
 ---
 
