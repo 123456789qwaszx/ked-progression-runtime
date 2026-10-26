@@ -17,11 +17,11 @@ namespace Ked.Progression.Tests
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("c"));
             Assert.That(scene.RecordedChoiceCount, Is.EqualTo(2));
 
-            scene.RewindAfter(10);
+            scene.RollbackTo(10);
 
             Assert.That(scene.EntryState.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("b"));
-            Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("b"));
+            Assert.That(scene.EffectiveState.CurrentEpisodeId, Is.EqualTo("b"));
             Assert.That(scene.RecordedChoiceCount, Is.EqualTo(1));
         }
 
@@ -37,7 +37,7 @@ namespace Ked.Progression.Tests
             scene.NoteCurrentEpisodeWatched(20);
             AdvanceFirstOption(scene, rollbackAnchor: 20);
 
-            scene.RewindAfter(10);
+            scene.RollbackTo(10);
 
             SceneCommitResult commit = scene.CreateCommitResult();
 
@@ -53,11 +53,11 @@ namespace Ked.Progression.Tests
 
             AdvanceFirstOption(scene, rollbackAnchor: 10);
 
-            scene.RestartReplay();
+            scene.ResetForReplay();
 
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.EntryState.CurrentEpisodeId, Is.EqualTo("a"));
-            Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("a"));
+            Assert.That(scene.EffectiveState.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.HasRecordedChoice, Is.True);
         }
 
@@ -70,19 +70,19 @@ namespace Ked.Progression.Tests
             AdvanceFirstOption(scene, rollbackAnchor: 10);
             AdvanceFirstOption(scene, rollbackAnchor: 20);
 
-            scene.RestartReplay();
+            scene.ResetForReplay();
 
             SceneChoice first = scene.TakeRecordedChoice(10);
 
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
 
-            scene.MoveTo(first.Option.TargetEpisodeId);
+            scene.AdvanceTo(first.Option.TargetEpisodeId);
 
             SceneChoice second = scene.TakeRecordedChoice(20);
 
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("b"));
 
-            scene.MoveTo(second.Option.TargetEpisodeId);
+            scene.AdvanceTo(second.Option.TargetEpisodeId);
 
             Assert.That(first.Source, Is.EqualTo(SceneChoiceSource.Recorded));
             Assert.That(first.FromEpisodeId, Is.EqualTo("a"));
@@ -100,45 +100,24 @@ namespace Ked.Progression.Tests
             ChapterDefinition chapter = CreateChapter();
             var scene = new SceneProgress(chapter, chapter.CreateEntryState());
 
-            bool restored = scene.TryRestorePath(
+            scene.RestorePath(
                 new[]
                 {
                     new ScenePathStep("a", 0),
                     new ScenePathStep("b", 0),
                 });
 
-            Assert.That(restored, Is.True);
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
             Assert.That(scene.RecordedChoiceCount, Is.EqualTo(2));
 
             SceneChoice first = scene.TakeRecordedChoice(10);
-            scene.MoveTo(first.Option.TargetEpisodeId);
+            scene.AdvanceTo(first.Option.TargetEpisodeId);
 
             SceneChoice second = scene.TakeRecordedChoice(20);
-            scene.MoveTo(second.Option.TargetEpisodeId);
+            scene.AdvanceTo(second.Option.TargetEpisodeId);
 
             Assert.That(scene.CurrentEpisodeId, Is.EqualTo("c"));
             Assert.That(scene.HasRecordedChoice, Is.False);
-        }
-
-        [Test]
-        public void InvalidRestorePath_clears_entire_recorded_path_and_falls_back_to_root()
-        {
-            ChapterDefinition chapter = CreateChapter();
-            var scene = new SceneProgress(chapter, chapter.CreateEntryState());
-
-            bool restored = scene.TryRestorePath(
-                new[]
-                {
-                    new ScenePathStep("a", 0),
-                    new ScenePathStep("wrong", 0),
-                });
-
-            Assert.That(restored, Is.False);
-            Assert.That(scene.RecordedChoiceCount, Is.Zero);
-            Assert.That(scene.HasRecordedChoice, Is.False);
-            Assert.That(scene.CurrentEpisodeId, Is.EqualTo("a"));
-            Assert.That(scene.WorkingState.CurrentEpisodeId, Is.EqualTo("a"));
         }
 
         [Test]
@@ -208,7 +187,7 @@ namespace Ked.Progression.Tests
             ChapterAdvance advance =
                 ChapterTransition.Resolve(
                     scene.Definition,
-                    scene.WorkingState);
+                    scene.EffectiveState);
 
             ResolvedOption selected = advance.Options[0];
 
@@ -221,7 +200,7 @@ namespace Ked.Progression.Tests
                     SceneChoiceSource.User),
                 rollbackAnchor);
 
-            scene.MoveTo(selected.Option.TargetEpisodeId);
+            scene.AdvanceTo(selected.Option.TargetEpisodeId);
         }
 
         private static ChapterDefinition CreateChapter()

@@ -8,37 +8,11 @@ namespace Ked.Progression
     {
         void EnterScene(
             string chapterId,
-            string sceneId,
-            ProgressionState entryState);
+            ChapterState entryState);
 
         void CommitScene(
             string chapterId,
-            string sceneId,
             SceneCommitResult result,
             SceneRunOutcome outcome);
-    }
-
-    public sealed class NullScenePersistence : IScenePersistence
-    {
-        public static readonly NullScenePersistence Instance = new();
-
-        private NullScenePersistence()
-        {
-        }
-
-        public void EnterScene(
-            string chapterId,
-            string sceneId,
-            ProgressionState entryState)
-        {
-        }
-
-        public void CommitScene(
-            string chapterId,
-            string sceneId,
-            SceneCommitResult result,
-            SceneRunOutcome outcome)
-        {
-        }
     }
 }

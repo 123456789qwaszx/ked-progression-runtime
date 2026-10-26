@@ -9,9 +9,9 @@ namespace Ked.Progression
     public readonly struct SceneRunResult
     {
         public SceneRunOutcome Outcome { get; }
-        public ProgressionState ExitState { get; }
+        public ChapterState ExitState { get; }
 
-        public SceneRunResult(SceneRunOutcome outcome, ProgressionState state)
+        public SceneRunResult(SceneRunOutcome outcome, ChapterState state)
         {
             Outcome = outcome;
             ExitState = state;

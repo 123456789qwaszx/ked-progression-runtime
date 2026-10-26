@@ -104,7 +104,7 @@ namespace Ked.Progression
             if (HasError(diagnostics))
                 return new ScenarioLoadResult(null, diagnostics);
             
-            ScenarioProgression scenario = new(scenarioId, displayName, startChapterId, chapters);
+            ScenarioDefinition scenario = new(scenarioId, displayName, startChapterId, chapters);
 
             return new ScenarioLoadResult(scenario, diagnostics);
         }

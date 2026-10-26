@@ -7,12 +7,12 @@ namespace Ked.Progression
     // Core는 이 값까지만 계산하고 save/report 실행은 Runtime/Host가 담당한다.
     public sealed class SceneCommitResult
     {
-        public ProgressionState State { get; }
+        public ChapterState State { get; }
         public IReadOnlyList<CommittedChoice> Choices { get; }
         public IReadOnlyList<string> WatchedEpisodeIds { get; }
 
         public SceneCommitResult(
-            ProgressionState state,
+            ChapterState state,
             IReadOnlyList<CommittedChoice> choices,
             IReadOnlyList<string> watchedEpisodeIds)
         {

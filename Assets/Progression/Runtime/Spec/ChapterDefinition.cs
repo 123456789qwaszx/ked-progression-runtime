@@ -130,8 +130,8 @@ namespace Ked.Progression
         public string SceneIdOf(string episodeId) =>
             TryGetNode(episodeId, out EpisodeNode node) ? node.SceneId : null;
 
-        public ProgressionState CreateEntryState() =>
-            ProgressionState.CreateInitial(Stats, StartEpisodeId);
+        public ChapterState CreateEntryState() =>
+            ChapterState.CreateInitial(Stats, StartEpisodeId);
 
         public override string ToString() =>
             $"{ChapterId}(에피소드 {Nodes.Count}, 스탯 {Stats.Count})";

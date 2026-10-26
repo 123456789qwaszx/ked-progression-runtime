@@ -40,9 +40,6 @@ namespace Ked.Progression
 
         public SceneChoice TakeRecordedChoice(int anchor)
         {
-            if (!HasRecordedChoice)
-                throw new InvalidOperationException("자동 응답할 진행 선택 기록이 없다.");
-
             ProgressionPick pick = _picks[PathCursor++];
             pick.Anchor = anchor;
 
@@ -127,7 +124,7 @@ namespace Ked.Progression
             });
         }
 
-        public IReadOnlyList<EpisodeOption> PendingOptions()
+        public IReadOnlyList<EpisodeOption> AppliedOptions()
         {
             _foldBuffer.Clear();
 
@@ -137,9 +134,11 @@ namespace Ked.Progression
             return _foldBuffer;
         }
 
-        public ProgressionState FoldInto(ChapterDefinition chapter, ProgressionState entryState)
+        public ChapterState ApplyTo(
+            ChapterDefinition chapter,
+            ChapterState entryState)
         {
-            return entryState.FoldChoices(chapter, PendingOptions());
+            return entryState.ApplyChoices(chapter, AppliedOptions());
         }
 
         public List<CommittedChoice> CreateCommittedChoices()
