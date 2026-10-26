@@ -1,6 +1,6 @@
 {
-  "name": "Ked.Progression.Debug",
-  "rootNamespace": "Ked.Progression.Debugging",
+  "name": "Ked.Progression.Samples",
+  "rootNamespace": "Ked.Progression.Samples",
   "references": [
     "Ked.Progression",
     "UnityEngine.UI",

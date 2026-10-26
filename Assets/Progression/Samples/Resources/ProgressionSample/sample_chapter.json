@@ -1,0 +1,187 @@
+{
+  "ChapterId": "sample_dungeon_gate",
+  "DisplayName": "샘플 — 던전 입구",
+  "StartEpisodeId": "EP_GATE",
+  "Stats": [
+    {
+      "Key": "courage",
+      "DisplayName": "용기",
+      "Type": "Number",
+      "Initial": 0,
+      "Minimum": 0,
+      "Maximum": 5
+    },
+    {
+      "Key": "insight",
+      "DisplayName": "통찰",
+      "Type": "Number",
+      "Initial": 0,
+      "Minimum": 0,
+      "Maximum": 5
+    },
+    {
+      "Key": "key",
+      "DisplayName": "녹슨 열쇠",
+      "Type": "Bool",
+      "Initial": 0,
+      "Minimum": 0,
+      "Maximum": 1
+    }
+  ],
+  "Nodes": [
+    {
+      "EpisodeId": "EP_GATE",
+      "Title": "입구",
+      "DialogueEntryId": "gate",
+      "SceneId": "입구",
+      "EventKey": "",
+      "NextOptions": [
+        {
+          "TargetEpisodeId": "EP_FORK",
+          "ChoiceLabel": "정면으로 들어간다",
+          "StatChanges": [
+            {
+              "Key": "courage",
+              "Amount": 2,
+              "Op": "Add"
+            }
+          ],
+          "VisibleConditions": [],
+          "Conditions": [],
+          "LockedReasonText": "",
+          "Auto": false
+        },
+        {
+          "TargetEpisodeId": "EP_FORK",
+          "ChoiceLabel": "주변을 먼저 살핀다",
+          "StatChanges": [
+            {
+              "Key": "insight",
+              "Amount": 2,
+              "Op": "Add"
+            },
+            {
+              "Key": "key",
+              "Amount": 1,
+              "Op": "Set"
+            }
+          ],
+          "VisibleConditions": [],
+          "Conditions": [],
+          "LockedReasonText": "",
+          "Auto": false
+        }
+      ]
+    },
+    {
+      "EpisodeId": "EP_FORK",
+      "Title": "갈림길",
+      "DialogueEntryId": "fork",
+      "SceneId": "입구",
+      "EventKey": "",
+      "NextOptions": [
+        {
+          "TargetEpisodeId": "EP_DEPTH",
+          "ChoiceLabel": "깊은 길로 내려간다",
+          "StatChanges": [],
+          "VisibleConditions": [],
+          "Conditions": [
+            {
+              "Kind": "Stat",
+              "Key": "courage",
+              "Op": "GreaterOrEqual",
+              "IntValue": 2
+            }
+          ],
+          "LockedReasonText": "용기가 2 이상이어야 한다",
+          "Auto": false
+        },
+        {
+          "TargetEpisodeId": "EP_VAULT",
+          "ChoiceLabel": "녹슨 열쇠로 옆문을 연다",
+          "StatChanges": [],
+          "VisibleConditions": [
+            {
+              "Kind": "Stat",
+              "Key": "key",
+              "Op": "Equal",
+              "IntValue": 1
+            }
+          ],
+          "Conditions": [],
+          "LockedReasonText": "",
+          "Auto": false
+        },
+        {
+          "TargetEpisodeId": "EP_RETURN",
+          "ChoiceLabel": "오늘은 돌아간다",
+          "StatChanges": [],
+          "VisibleConditions": [],
+          "Conditions": [],
+          "LockedReasonText": "",
+          "Auto": false
+        }
+      ]
+    },
+    {
+      "EpisodeId": "EP_DEPTH",
+      "Title": "깊은 곳",
+      "DialogueEntryId": "depth",
+      "SceneId": "깊은 곳",
+      "EventKey": "",
+      "NextOptions": [
+        {
+          "TargetEpisodeId": "EP_FLOOR",
+          "ChoiceLabel": "",
+          "StatChanges": [],
+          "VisibleConditions": [],
+          "Conditions": [],
+          "LockedReasonText": "",
+          "Auto": true
+        }
+      ]
+    },
+    {
+      "EpisodeId": "EP_FLOOR",
+      "Title": "바닥",
+      "DialogueEntryId": "floor",
+      "SceneId": "깊은 곳",
+      "EventKey": "reached_first_floor",
+      "NextOptions": []
+    },
+    {
+      "EpisodeId": "EP_VAULT",
+      "Title": "보관실",
+      "DialogueEntryId": "vault",
+      "SceneId": "보관실",
+      "EventKey": "found_old_map",
+      "NextOptions": [
+        {
+          "TargetEpisodeId": "EP_END",
+          "ChoiceLabel": "지도를 챙겨 밖으로 나간다",
+          "StatChanges": [],
+          "VisibleConditions": [],
+          "Conditions": [],
+          "LockedReasonText": "",
+          "Auto": false
+        }
+      ]
+    },
+    {
+      "EpisodeId": "EP_RETURN",
+      "Title": "귀환",
+      "DialogueEntryId": "return",
+      "SceneId": "귀환",
+      "EventKey": "",
+      "NextOptions": []
+    },
+    {
+      "EpisodeId": "EP_END",
+      "Title": "끝",
+      "DialogueEntryId": "end",
+      "SceneId": "끝",
+      "EventKey": "",
+      "NextOptions": []
+    }
+  ]
+}
