@@ -753,7 +753,7 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 | 계약 | 구현 (`Assets/Scripts/`) |
 | --- | --- |
 | `ISceneRunner` | `ProgressionHost/SceneRunner` |
-| `IScenePresentation` | `ProgressionHost/ScenePresentationProgressionAdapter` → `Game/ScenePresentation` (Yarn 노드 재생) |
+| `IScenePresentation` | 쓰지 않는다. 재생 단위의 수명(열기·정지·루트부터 다시 달리기)을 연출 쪽 `Playback/PlaybackUnit`이 소유하고, `SceneRunner`가 그것을 부른다 |
 | `IChapterOptionsView` | `ProgressionHost/ChapterOptionsView` |
 | `IScenePersistence` | `ProgressionHost/ProgressionSaveBridge` |
 | `IProgressionLog` | `ProgressionHost/UnityProgressionLog` |
