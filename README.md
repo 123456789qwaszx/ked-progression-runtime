@@ -15,7 +15,7 @@ Scene 실행 순서(`ProgressionHost/SceneRunner`)와 재생·저장·백로그�
 
 1. Unity 6000.3.16f1로 이 프로젝트를 연다.
 2. 아무 씬(예: `Assets/Scenes/SampleScene.unity`)에서 Play를 누른다. 샘플이 스스로 설치되므로 씬에 놓을 것이 없다.
-3. 오른쪽의 [처음부터]를 누르고, [다음 ▶]과 선택지로 진행한다.
+3. 오른쪽의 [처음부터]를 누르고, [다음 ▶]과 선택지로 진행한다. 끝까지 간 뒤 대사 기록의 지난 줄을 누르면 그 장면에서 갈라져 다시 한다.
 
 샘플의 구성과 고치는 법은 [9. 샘플](#9-샘플)에 있다.
 
@@ -677,7 +677,7 @@ Scene Enter                  (호스트 준비: 재생 정리, 백로그 경계,
 
 | 구현 | 위치 | 범위 |
 | --- | --- | --- |
-| `SampleSceneRunner` | 이 저장소 `Assets/Progression/Samples` | 재생·선택·commit만. 리플레이 요청은 무시하고, 복원 시작은 지원하지 않는다(예외). |
+| `SampleSceneRunner` | 이 저장소 `Assets/Progression/Samples` | 재생·선택·commit, Scene 경계 저장, 복원 시작(루트부터 표적 줄까지 빨리 감기). 장면 안 리플레이(롤백)는 없다. |
 | `SceneRunner` | `ked-presentation-runtime` `Assets/Scripts/ProgressionHost/SceneRunner.cs` | Yarn 재생, 롤백/백로그 점프 리플레이, 로드 시 기록된 선택 소비(seek), Scene 경계 저장, 백로그 경계 |
 
 ## Replay
@@ -767,23 +767,43 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 
 # 9. 샘플
 
-`Assets/Progression/Samples`(어셈블리 `Ked.Progression.Samples`)는 진행 코어만으로 챕터 하나를 끝까지 돌려 보는 최소 호스트다.
+`Assets/Progression/Samples`(어셈블리 `Ked.Progression.Samples`)는 진행 코어와 진행 저장만으로 챕터 하나를 돌려 보는 작은 호스트다.
 `RuntimeInitializeOnLoadMethod`로 Play 시작 때 스스로 설치된다.
+저장 파일은 `Application.persistentDataPath/ked-progression-sample/`에 쌓인다(진행 기록 첫 줄에 경로가 찍힌다).
 
-화면 왼쪽에는 장면 이름·대사·[다음 ▶]이, 오른쪽에는 [처음부터]·스탯·선택지·진행 기록이 있다.
-진행 기록에는 드라이버의 `[RUN]` 기록과 Scene 진입·commit 결과가 함께 남는다.
+화면 왼쪽에는 장면 이름·대사·[다음 ▶]·진행 기록이, 오른쪽에는 [처음부터]·[이어하기]·스탯·선택지·**대사 기록**이 있다.
+
+## 대사 기록에서 갈라지기 — 결정 E3의 소비자
+
+대사 기록은 이 샘플 호스트의 백로그다. 줄마다 회차 전체에 걸친 번호가 붙고, 그 번호가 **호스트 순번**이다.
+
+1. 확정된 장면의 줄을 누른다. 진행 중인 장면의 줄은 누를 수 없다 — 확정 전 장면 안 되감기는 연출 런타임(롤백)의 몫이다.
+2. 진행 저장이 그 번호가 어느 확정 장면의 것인지 답한다(`PlaythroughSaveSnapshot.FindSceneIndexBySerial`).
+3. 그 장면의 루트(진입 checkpoint + 선택 경로)에서 새 회차를 연다(`PlaythroughForkService.ForkFromScene`).
+   그 장면 이전의 대사 기록과 "장면 안 몇 번째 줄"은 호스트 상태로 싣는다(`SampleHostState`).
+4. 새 회차를 이어하면 실행기가 장면 루트부터 그 줄까지 빨리 감는다 — 대사는 기록에만 적고, 저장된 간선 선택을 다시 쓴다.
+   표적 줄부터 평소처럼 보이고, 그다음 선택지는 다시 묻는다.
+
+원래 회차는 바뀌지 않는다. 확정된 과거는 되감지 않고 분기한다.
+[이어하기]는 보인 줄마다 갱신되는 재개 지점(`SaveCoordinator.UpdateResumePoint`)으로 같은 빨리 감기를 한다.
 
 | 파일 | 역할 |
 | --- | --- |
-| `ProgressionSampleBootstrap` | 조립 지점. JSON → `ProgressionLoader.Load` → `ProgressionDriver`. `IProgressionLog` 구현 |
-| `SampleSceneRunner` | `ISceneRunner` 최소 구현 |
+| `ProgressionSampleBootstrap` | 조립 지점. JSON → `ProgressionLoader.Load`, 진행 저장(저장소·시계·로그), 화면, 회차. `IProgressionLog` 구현 |
+| `SamplePlaythrough` | 새로 시작 / 이어하기 / 대사 기록의 줄에서 갈라지기 |
+| `SampleSceneRunner` | `ISceneRunner` 구현. 줄 단위 재생, Scene 경계 저장, 복원 시작 때 빨리 감기 |
+| `SampleLineLog` | 대사 기록(이 호스트의 백로그). 줄 번호 = 호스트 순번 |
+| `SampleHostState` | 진행 저장의 `HostState` 칸에 싣는 것(대사 기록, 장면 안 줄 번호) |
+| `SampleSaveBridge` | `IScenePersistence` 구현. Scene 경계에서 호스트 순번·호스트 상태를 실어 저장 |
 | `ProgressionSampleView` | 코드로 만드는 uGUI. `ISampleScreen`, `IChapterOptionsView` 구현 |
-| `ISampleScreen` | 샘플 화면 계약 (Episode 재생, Scene 진입·commit 표시) |
+| `ISampleScreen` | 샘플 화면 계약 (대사 한 줄, Scene 진입·commit 표시) |
 | `SampleScript` | `# 키` 형식 대본 파서. 실제 게임에서는 Yarn이 맡는 자리다 |
 | `Resources/ProgressionSample/sample_chapter.json` | 챕터 그래프 |
 | `Resources/ProgressionSample/sample_script.txt` | 대사 |
 
-샘플 챕터 "던전 입구"는 세 갈래로 끝난다.
+## 샘플 챕터
+
+"던전 입구"는 세 갈래로 끝난다.
 
 ```text
 [입구]   EP_GATE ─┬─ 정면으로 들어간다   (용기 +2) ─────────┐
@@ -801,6 +821,7 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 - **살핌** → 깊은 길은 잠긴 사유와 함께 보이고, 옆문이 나타난다. 보관실을 나가는 길은 묻는 선택지다.
 - **돌아간다** → 다음 간선이 없는 Episode에서 챕터가 끝난다.
 - 어느 길이든 Scene 경계를 넘을 때마다 앞 Scene의 commit 결과(선택 수, 이벤트 Episode, 다음 시작점)가 진행 기록에 남고 스탯 칸이 갱신된다.
+- 끝까지 간 뒤 **입구** 장면의 갈림길 줄을 누르면, 입구의 선택은 그대로 둔 채 갈림길에서 다른 길을 고를 수 있다.
 
 고치는 법:
 
@@ -808,7 +829,7 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 - 그래프: `sample_chapter.json`을 고친다. 데이터가 불변식을 어기면 Play 시 콘솔에 진단이 뜨고 샘플은 시작하지 않는다.
 - 실행 순서: `SampleSceneRunner`를 고치거나 새 `ISceneRunner`를 만들어 `ProgressionDriver`에 넘긴다.
 
-리플레이·롤백·저장 복원은 샘플 범위 밖이다. 그 구현은 `ked-presentation-runtime`의 `SceneRunner`를 본다.
+장면 안 리플레이·롤백은 샘플 범위 밖이다. 그 구현은 `ked-presentation-runtime`의 `SceneRunner`를 본다.
 
 ---
 
@@ -877,6 +898,7 @@ Scene 진입 checkpoint                   백로그
 원래 회차는 바뀌지 않는다.
 
 **지키는 장치.** `tests/ProgressionSave`의 "결정 E3" 테스트가 이 흐름 전체를 한 시나리오로 잰다.
+그리고 이 저장소의 샘플이 실제로 쓴다 — 대사 기록의 지난 줄을 누르면 그 장면에서 갈라진다([9. 샘플](#9-샘플)).
 이 저장소에 백로그가 없다고 해서 `HostSerialStart/End`·`SceneRecord.HostState`·`FindSceneIndexBySerial`·`ForkFromScene`의 호스트 상태 인자를
 쓰이지 않는 일반화로 보고 지우면, 연출 쪽에서 "이전 장면 대사로 돌아가기"가 통째로 사라진다.
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
+using Ked.Progression.Save;
 using Newtonsoft.Json;
 using UnityEngine;
 
@@ -12,23 +14,25 @@ namespace Ked.Progression.Samples
     /// 조립 순서
     /// 1. 챕터 JSON(Resources/ProgressionSample/sample_chapter) → ChapterProgressionDto → ProgressionLoader.Load
     /// 2. 대본(Resources/ProgressionSample/sample_script) → SampleScript
-    /// 3. 화면(ProgressionSampleView) + 장면 실행기(SampleSceneRunner) + ProgressionDriver
-    /// 4. [처음부터] → driver.Start(chapter, chapter.CreateEntryState())
+    /// 3. 진행 저장 — LocalFileSaveStore(persistentDataPath/ked-progression-sample) + SaveCoordinator + 갈라지기
+    /// 4. 화면(ProgressionSampleView) + 대사 기록(SampleLineLog) + 장면 실행기(SampleSceneRunner)
+    /// 5. 회차(SamplePlaythrough) — [처음부터] / [이어하기] / 대사 기록의 줄 눌러 갈라지기
     ///
     /// 진행 코어는 장면 실행 순서를 갖지 않는다. 호스트가 ISceneRunner로 준다.
-    /// 이 샘플의 실행기는 최소 구현이고, 리플레이·저장까지 갖춘 구현은
-    /// ked-presentation-runtime의 ProgressionHost/SceneRunner다.
+    /// 진행 저장은 엔진을 모른다. 시계와 로그를 여기서 꽂는다.
     /// </summary>
     public sealed class ProgressionSampleBootstrap : MonoBehaviour, IProgressionLog
     {
         private const string ChapterResource = "ProgressionSample/sample_chapter";
         private const string ScriptResource = "ProgressionSample/sample_script";
+        private const string SaveFolder = "ked-progression-sample";
+        private const string ContentVersion = "sample-v1";
 
         private ProgressionSampleView _view;
-        private ChapterDefinition _chapter;
-        private ProgressionDriver _driver;
+        private SamplePlaythrough _playthrough;
+        private LocalSaveMaintenance _maintenance;
 
-        private bool _restarting;
+        private bool _busy;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -47,34 +51,63 @@ namespace Ked.Progression.Samples
         private void Awake()
         {
             _view = ProgressionSampleView.Create(transform);
-            _view.RestartClicked += HandleRestartClicked;
 
-            _chapter = LoadChapter();
+            ChapterDefinition chapter = LoadChapter();
             SampleScript script = SampleScript.Parse(LoadText(ScriptResource));
+            var lines = new SampleLineLog();
 
-            _view.Bind(script, _chapter);
-
-            if (_chapter == null)
+            if (chapter == null)
+            {
+                _view.Bind(null, lines, null);
                 return;
+            }
 
-            SampleSceneRunner runner = new(_view, _view);
-            _driver = new ProgressionDriver(runner, this);
+            string folder = Path.Combine(Application.persistentDataPath, SaveFolder);
+            var store = new LocalFileSaveStore(folder);
+            var save = new SaveCoordinator(store, ContentVersion, () => Time.realtimeSinceStartupAsDouble, this);
+            var fork = new PlaythroughForkService(store, ContentVersion, this);
+            _maintenance = new LocalSaveMaintenance(store, this);
+
+            var runner = new SampleSceneRunner(
+                _view,
+                _view,
+                script,
+                lines,
+                new SampleSaveBridge(save, lines),
+                this);
+
+            _playthrough = new SamplePlaythrough(chapter, runner, lines, save, fork, this);
+
+            _view.Bind(chapter, lines, _playthrough.CanForkFrom);
+            _view.RestartClicked += HandleRestart;
+            _view.ContinueClicked += HandleContinue;
+            _view.LineClicked += HandleLineClicked;
+
+            Info($"[샘플] 저장 위치: {folder}");
         }
 
-        private async void HandleRestartClicked()
+        private void Update()
         {
-            if (_driver == null || _restarting)
+            _maintenance?.Tick(Time.realtimeSinceStartupAsDouble);
+        }
+
+        private void HandleRestart() => Run(() => _playthrough.StartNewAsync());
+
+        private void HandleContinue() => Run(() => _playthrough.ResumeAsync());
+
+        private void HandleLineClicked(int serial) => Run(() => _playthrough.ForkFromLineAsync(serial));
+
+        // 버튼이 겹쳐 눌려도 한 번에 하나만.
+        private async void Run(Func<Task> action)
+        {
+            if (_busy)
                 return;
 
-            _restarting = true;
+            _busy = true;
 
             try
             {
-                if (_driver.IsRunning)
-                    await _driver.StopAsync();
-
-                _view.AppendLog($"── 새로 시작: {_chapter.DisplayName} ──");
-                _driver.Start(_chapter, _chapter.CreateEntryState());
+                await action();
             }
             catch (Exception error)
             {
@@ -82,7 +115,7 @@ namespace Ked.Progression.Samples
             }
             finally
             {
-                _restarting = false;
+                _busy = false;
             }
         }
 
@@ -140,7 +173,7 @@ namespace Ked.Progression.Samples
             }
         }
 
-        #region IProgressionLog — 드라이버의 기록을 콘솔과 화면에 함께 남긴다
+        #region IProgressionLog — 드라이버·저장의 기록을 콘솔과 화면에 함께 남긴다
 
         public void Info(string message)
         {
@@ -165,10 +198,14 @@ namespace Ked.Progression.Samples
         private void OnDestroy()
         {
             if (_view != null)
-                _view.RestartClicked -= HandleRestartClicked;
+            {
+                _view.RestartClicked -= HandleRestart;
+                _view.ContinueClicked -= HandleContinue;
+                _view.LineClicked -= HandleLineClicked;
+            }
 
-            if (_driver != null && _driver.IsRunning)
-                _ = _driver.StopAsync();
+            if (_playthrough != null && _playthrough.IsRunning)
+                _ = _playthrough.StopAsync();
         }
     }
 }

@@ -3,6 +3,7 @@
   "rootNamespace": "Ked.Progression.Samples",
   "references": [
     "Ked.Progression",
+    "Ked.Progression.Save",
     "UnityEngine.UI",
     "Unity.InputSystem"
   ],

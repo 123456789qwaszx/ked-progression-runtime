@@ -13,33 +13,46 @@ namespace Ked.Progression.Samples
     /// <summary>
     /// 샘플 화면. 코드로 세우는 uGUI라 씬에 아무것도 놓지 않아도 된다.
     ///
-    /// - 왼쪽: 대사(에피소드의 줄을 하나씩) + 다음 버튼
-    /// - 오른쪽: 현재 위치·스탯, 선택지, 진행 기록(장면 진입·확정)
+    /// - 왼쪽: 위치, 대사 한 줄, [다음], 진행 기록(드라이버·저장 로그)
+    /// - 오른쪽: [처음부터] [이어하기], 스탯, 선택지, 대사 기록
+    ///
+    /// 대사 기록의 줄은 버튼이다. 확정된 장면의 줄을 누르면 그 장면에서 갈라져 그 줄부터 다시 한다.
+    /// 진행 중인 장면의 줄은 누를 수 없다(확정 전 장면 안 되감기는 연출 런타임의 롤백 몫).
     ///
     /// 진행 코어 쪽에서 보면 두 계약의 구현이다.
-    /// - ISampleScreen — 에피소드 재생과 장면 경계 표시
+    /// - ISampleScreen — 대사 한 줄과 장면 경계 표시
     /// - IChapterOptionsView — 선택지(잠김·숨김 포함)
     /// </summary>
     public sealed class ProgressionSampleView : MonoBehaviour, ISampleScreen, IChapterOptionsView
     {
+        private const int LogLinesShown = 10;
+        private const int DialogueLinesShown = 16;
+        private const int DialogueLabelLength = 38;
+
         private static Font _font;
 
-        private SampleScript _script;
         private ChapterDefinition _chapter;
+        private SampleLineLog _lines;
+        private Func<int, bool> _canFork;
 
         private Text _location;
         private Text _dialogue;
         private Button _nextButton;
+        private Text _log;
         private Text _stats;
         private RectTransform _choiceList;
-        private Text _log;
+        private RectTransform _lineList;
 
-        private readonly StringBuilder _logBuffer = new();
+        private readonly Queue<string> _logLines = new();
 
         private TaskCompletionSource<bool> _nextGate;
         private TaskCompletionSource<int> _choiceGate;
 
         public event Action RestartClicked;
+        public event Action ContinueClicked;
+
+        /// <summary>대사 기록의 줄을 눌렀다. 인자는 그 줄 번호(호스트 순번).</summary>
+        public event Action<int> LineClicked;
 
         public static ProgressionSampleView Create(Transform owner)
         {
@@ -67,43 +80,58 @@ namespace Ked.Progression.Samples
             return view;
         }
 
-        public void Bind(SampleScript script, ChapterDefinition chapter)
+        public void Bind(ChapterDefinition chapter, SampleLineLog lines, Func<int, bool> canFork)
         {
-            _script = script;
+            if (_lines != null)
+                _lines.Changed -= RefreshLines;
+
             _chapter = chapter;
+            _lines = lines;
+            _canFork = canFork;
+
+            if (_lines != null)
+                _lines.Changed += RefreshLines;
 
             _location.text = chapter == null ? "챕터를 싣지 못했다" : chapter.DisplayName;
             _dialogue.text = chapter == null
                 ? "챕터 JSON을 싣지 못했다. 콘솔의 진단을 볼 것."
-                : "[처음부터]를 누르면 시작한다.";
+                : "[처음부터]로 새로 시작하거나 [이어하기]로 저장된 회차를 이어한다.";
+
+            RefreshLines();
         }
 
         public void AppendLog(string message)
         {
-            _logBuffer.AppendLine(message);
-            _log.text = _logBuffer.ToString();
+            _logLines.Enqueue(message);
+
+            while (_logLines.Count > LogLinesShown)
+                _logLines.Dequeue();
+
+            _log.text = string.Join("\n", _logLines);
         }
 
         #region ISampleScreen
-
-        public async Task PlayEpisodeAsync(EpisodeNode episode, CancellationToken cancellationToken)
-        {
-            _location.text = $"{_chapter.DisplayName}  ›  장면 {episode.SceneId}  ›  {episode.Title}";
-
-            if (!_script.TryGetLines(episode.DialogueEntryId, out IReadOnlyList<string> lines) || lines.Count == 0)
-                lines = new[] { $"(대본에 '{episode.DialogueEntryId}'이(가) 없다)" };
-
-            foreach (string line in lines)
-            {
-                _dialogue.text = line;
-                await WaitNextAsync(cancellationToken);
-            }
-        }
 
         public void ShowSceneEntered(SceneProgress progress)
         {
             AppendLog($"▶ 장면 진입: {progress.SceneId} (루트 {progress.RootEpisodeId})");
             ShowStats(progress.EntryState);
+        }
+
+        public void ShowLine(EpisodeNode episode, string line)
+        {
+            _location.text = $"{_chapter.DisplayName}  ›  장면 {episode.SceneId}  ›  {episode.Title}";
+            _dialogue.text = line;
+        }
+
+        public async Task WaitNextAsync(CancellationToken cancellationToken)
+        {
+            var gate = new TaskCompletionSource<bool>();
+            _nextGate = gate;
+            _nextButton.interactable = true;
+
+            using (cancellationToken.Register(() => gate.TrySetCanceled()))
+                await gate.Task;
         }
 
         public void ShowSceneCommitted(SceneCommitResult commit, SceneRunOutcome outcome)
@@ -119,9 +147,12 @@ namespace Ked.Progression.Samples
 
             ShowStats(commit.State);
 
+            // 방금 확정된 장면의 줄이 갈라질 수 있게 됐다.
+            RefreshLines();
+
             if (outcome == SceneRunOutcome.ChapterEnded)
             {
-                _dialogue.text = "— 챕터 끝 —\n[처음부터]로 다시 해 볼 수 있다.";
+                _dialogue.text = "— 챕터 끝 —\n대사 기록에서 지난 장면의 줄을 누르면 거기서부터 다른 길을 골라 볼 수 있다.";
                 _nextButton.interactable = false;
             }
         }
@@ -132,7 +163,7 @@ namespace Ked.Progression.Samples
 
         public Task<int> ShowAsync(IReadOnlyList<ResolvedOption> options, int hiddenCount)
         {
-            ClearChoices();
+            ClearChildren(_choiceList);
 
             _choiceGate = new TaskCompletionSource<int>();
             _nextButton.interactable = false;
@@ -164,8 +195,9 @@ namespace Ked.Progression.Samples
 
             _nextGate?.TrySetCanceled();
             _nextGate = null;
+            _nextButton.interactable = false;
 
-            ClearChoices();
+            ClearChildren(_choiceList);
         }
 
         #endregion
@@ -175,19 +207,9 @@ namespace Ked.Progression.Samples
             TaskCompletionSource<int> gate = _choiceGate;
             _choiceGate = null;
 
-            ClearChoices();
-            _nextButton.interactable = true;
+            ClearChildren(_choiceList);
 
             gate?.TrySetResult(index);
-        }
-
-        private async Task WaitNextAsync(CancellationToken cancellationToken)
-        {
-            _nextGate = new TaskCompletionSource<bool>();
-            _nextButton.interactable = true;
-
-            using (cancellationToken.Register(() => _nextGate?.TrySetCanceled()))
-                await _nextGate.Task;
         }
 
         private void ShowStats(ChapterState state)
@@ -200,10 +222,54 @@ namespace Ked.Progression.Samples
             _stats.text = text.ToString();
         }
 
-        private void ClearChoices()
+        // 대사 기록을 다시 그린다. 확정된 장면의 줄만 누를 수 있다.
+        private void RefreshLines()
         {
-            for (int i = _choiceList.childCount - 1; i >= 0; i--)
-                Destroy(_choiceList.GetChild(i).gameObject);
+            if (_lineList == null)
+                return;
+
+            ClearChildren(_lineList);
+
+            if (_lines == null || _chapter == null)
+                return;
+
+            IReadOnlyList<SampleLine> entries = _lines.Entries;
+            int first = Math.Max(0, entries.Count - DialogueLinesShown);
+
+            for (int i = first; i < entries.Count; i++)
+            {
+                SampleLine line = entries[i];
+                int serial = line.Serial;
+
+                string scene = _chapter.TryGetNode(line.EpisodeId, out EpisodeNode node) ? node.SceneId : "?";
+                string text = line.Text.Length > DialogueLabelLength
+                    ? line.Text.Substring(0, DialogueLabelLength) + "…"
+                    : line.Text;
+
+                Button button = CreateButton(_lineList, $"Line {serial}", $"{serial,2}  [{scene}]  {text}", 30f);
+                Text label = button.GetComponentInChildren<Text>();
+                label.alignment = TextAnchor.MiddleLeft;
+                label.fontSize = 16;
+
+                button.interactable = _canFork != null && _canFork(serial);
+                button.onClick.AddListener(() => LineClicked?.Invoke(serial));
+            }
+        }
+
+        private static void ClearChildren(RectTransform parent)
+        {
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                GameObject child = parent.GetChild(i).gameObject;
+                child.SetActive(false);
+                Destroy(child);
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_lines != null)
+                _lines.Changed -= RefreshLines;
         }
 
         #region 화면 세우기
@@ -220,7 +286,7 @@ namespace Ked.Progression.Samples
             columns.childForceExpandHeight = true;
             columns.childForceExpandWidth = false;
 
-            // 왼쪽: 대사
+            // 왼쪽: 대사와 진행 기록
             RectTransform left = CreatePanel(root, "DialoguePanel", 1100f);
             _location = CreateLabel(left, "Location", "-", 22, 36f);
             _dialogue = CreateLabel(left, "Dialogue", "", 30, 0f);
@@ -237,28 +303,50 @@ namespace Ked.Progression.Samples
                 gate?.TrySetResult(true);
             });
 
-            // 오른쪽: 상태·선택지·기록
+            CreateLabel(left, "LogTitle", "진행 기록", 20, 30f);
+            _log = CreateLabel(left, "Log", "", 16, 240f);
+            _log.alignment = TextAnchor.UpperLeft;
+
+            // 오른쪽: 회차·상태·선택지·대사 기록
             RectTransform right = CreatePanel(root, "StatusPanel", 732f);
 
-            Button restart = CreateButton(right, "Restart", "처음부터", 44f);
+            RectTransform buttons = CreateRect(right, "Buttons");
+            buttons.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
+            HorizontalLayoutGroup row = buttons.gameObject.AddComponent<HorizontalLayoutGroup>();
+            row.spacing = 8f;
+            row.childControlHeight = true;
+            row.childControlWidth = true;
+            row.childForceExpandHeight = true;
+            row.childForceExpandWidth = true;
+
+            Button restart = CreateButton(buttons, "Restart", "처음부터", 44f);
             restart.onClick.AddListener(() => RestartClicked?.Invoke());
+
+            Button resume = CreateButton(buttons, "Continue", "이어하기", 44f);
+            resume.onClick.AddListener(() => ContinueClicked?.Invoke());
 
             _stats = CreateLabel(right, "Stats", "", 22, 36f);
 
             CreateLabel(right, "ChoicesTitle", "선택지", 20, 30f);
-            _choiceList = CreateRect(right, "Choices");
-            VerticalLayoutGroup choiceLayout = _choiceList.gameObject.AddComponent<VerticalLayoutGroup>();
-            choiceLayout.spacing = 6f;
-            choiceLayout.childControlHeight = true;
-            choiceLayout.childControlWidth = true;
-            choiceLayout.childForceExpandHeight = false;
-            choiceLayout.childForceExpandWidth = true;
-            _choiceList.gameObject.AddComponent<LayoutElement>().minHeight = 200f;
+            _choiceList = CreateList(right, "Choices", 6f);
+            _choiceList.gameObject.AddComponent<LayoutElement>().minHeight = 170f;
 
-            CreateLabel(right, "LogTitle", "진행 기록", 20, 30f);
-            _log = CreateLabel(right, "Log", "", 18, 0f);
-            _log.alignment = TextAnchor.UpperLeft;
-            _log.GetComponent<LayoutElement>().flexibleHeight = 1f;
+            CreateLabel(right, "LinesTitle", "대사 기록", 20, 30f);
+            CreateLabel(right, "LinesHint", "확정된 장면의 줄을 누르면 그 장면에서 갈라져 그 줄부터 다시 한다.", 15, 24f);
+            _lineList = CreateList(right, "Lines", 2f);
+            _lineList.gameObject.AddComponent<LayoutElement>().flexibleHeight = 1f;
+        }
+
+        private static RectTransform CreateList(Transform parent, string name, float spacing)
+        {
+            RectTransform list = CreateRect(parent, name);
+            VerticalLayoutGroup layout = list.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = spacing;
+            layout.childControlHeight = true;
+            layout.childControlWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childForceExpandWidth = true;
+            return list;
         }
 
         private static RectTransform CreatePanel(Transform parent, string name, float width)
