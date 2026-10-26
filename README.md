@@ -914,8 +914,9 @@ Scene 진입 checkpoint                   백로그
 엔진을 모른다. 플레이 시간은 생성자에 넣는 시계(`Func<double>`), 로그는 `IProgressionLog`로 받는다.
 JSON은 Newtonsoft(`com.unity.nuget.newtonsoft-json`)로 쓴다. 코어 `Ked.Progression`은 Newtonsoft를 모른다.
 
-연출 겹의 실제 구현은 `ked-presentation-runtime`의 `Ked.Presentation.Playback/Memory/PresentationMemory.cs`(연출 기억 코덱 — 진행을 모른다)와
-`ProgressionHost/ProgressionSaveBridge.cs`(Scene 경계에서 싣기)다.
+연출 겹의 실제 구현은 `ked-presentation-runtime`의 `Ked.Presentation.Playback/Memory/PlaybackMemory.cs`(연출 기억의 입구 — 진행을 모른다)와
+`ProgressionHost/ProgressionSaveBridge.cs`(Scene 경계에서 싣기)다. 그쪽 연출 단독 예제는 같은 문자열을 진행 없이 파일 하나에 둔다 —
+호스트 상태가 진행 저장 전용이 아니라 연출이 스스로 들고 있는 기억이라는 뜻이다.
 
 ---
 
