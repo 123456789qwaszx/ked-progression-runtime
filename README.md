@@ -857,6 +857,29 @@ Scene 진입 checkpoint                   백로그
 정수 하나는 진행 겹에 남는다. `SceneCheckpoint.HostSerialStart` / `SceneRecord.HostSerialEnd` — 호스트가 세는 단조 증가 순번의 Scene 경계다.
 "백로그 몇 번째 줄은 어느 완료 Scene의 것인가"를 진행 겹이 답하는 근거이고(`PlaythroughSaveSnapshot.FindSceneIndexBySerial`), 그것이 줄 번호라는 것은 모른다.
 
+### 결정 E3 — 과거 장면 루트 보관은 진행의 책임이다
+
+**무엇이 걸려 있었나.** 플레이어가 백로그에서 이전 장면의 대사를 누르면 그 줄로 돌아가야 한다.
+되감기는 *루트 세우기 + 루트부터 시크*다. 시크(대사 줄을 화면 없이 지나가며 Yarn 선택을 자동 응답)는 연출이 한다.
+남는 질문은 하나 — **이전 장면의 루트를 누가 들고 있는가.**
+
+**결정.** 진행이 든다. 확정된 Scene마다 진입 checkpoint(Episode·스탯)와 선택 경로를 보관하고(`SceneRecord`),
+어느 장면에서든 새 회차를 연다(`PlaythroughForkService.ForkFromScene`).
+호스트는 자기 순번으로 장면을 찾고(`HostSerialStart/End`), 그 장면 안 어디까지 갈지는 호스트 상태(`loadHostState`)로 넘긴다.
+
+**왜 연출이 아닌가.** `ked-presentation-runtime`은 재생 단위의 루트를 **하나만** 둔다.
+롤백 기록·Yarn 선택 기록·시크는 "지금 단위의 루트부터 다시 재생"으로 동작하고, 단위가 바뀌면 비워진다.
+이전 단위의 루트를 다시 세우려면 그때의 Episode·스탯·경로가 필요한데, 그것은 확정된 진행 상태다.
+연출이 이것까지 들면 연출이 진행을 알아야 한다.
+
+**왜 되감기가 아니라 분기인가.** 확정된 과거는 되감지 않고 분기한다.
+현재 장면은 아직 확정 전이라 연출이 제자리에서 자르고(롤백), 이전 장면은 확정됐으므로 새 회차로 갈라진다.
+원래 회차는 바뀌지 않는다.
+
+**지키는 장치.** `tests/ProgressionSave`의 "결정 E3" 테스트가 이 흐름 전체를 한 시나리오로 잰다.
+이 저장소에 백로그가 없다고 해서 `HostSerialStart/End`·`SceneRecord.HostState`·`FindSceneIndexBySerial`·`ForkFromScene`의 호스트 상태 인자를
+쓰이지 않는 일반화로 보고 지우면, 연출 쪽에서 "이전 장면 대사로 돌아가기"가 통째로 사라진다.
+
 | 타입 | 역할 |
 | --- | --- |
 | `SaveCoordinator` | 현재 회차의 저장 세션. Scene 진입 checkpoint, 재개 지점 갱신, Scene 확정 |

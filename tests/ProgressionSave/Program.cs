@@ -76,10 +76,12 @@ internal static class Program
     private static ChapterState State(string episode = "scene1") =>
         ChapterState.CreateInitial(Array.Empty<StatDefinition>(), episode);
 
-    private static ChapterState StateWithScore(int score) =>
+    private static ChapterState StateWithScore(int score) => StateAt("scene1", score);
+
+    private static ChapterState StateAt(string episode, int score) =>
         ChapterState.CreateInitial(
             new[] { new StatDefinition("score", "Score", StatType.Number, score, 0, 100) },
-            "scene1");
+            episode);
 
     private static SaveCoordinator Coordinator(ILocalSaveStore store, string contentVersion = ContentVersion) =>
         new(store, contentVersion, () => _now);
@@ -449,6 +451,78 @@ internal static class Program
             #endregion
 
             #region 갈라지기
+
+            // ── 결정 E3 ─────────────────────────────────────────────────────────────
+            // 과거 장면의 루트는 진행이 보관한다. 연출(ked-presentation-runtime)은 재생 단위의
+            // 루트를 하나만 두기 때문에, "이전 장면의 대사 줄로 돌아가기"는 이 저장소의
+            // 갈라지기 + 연출의 시크로만 된다. README §11 "과거 장면 루트 보관" 참고.
+            //
+            // 이 저장소에는 백로그가 없어서 HostSerialStart/End · SceneRecord.HostState ·
+            // FindSceneIndexBySerial · ForkFromScene의 호스트 상태 인자가 쓰이지 않는 일반화로
+            // 보일 수 있다. 지우기 전에 이 테스트가 무엇을 지키는지 읽는다.
+            Test("결정 E3 — 과거 장면 루트는 진행이 보관한다: 호스트가 자기 순번으로 과거 장면을 찾아 갈라지고, 재생 계획에 호스트 상태가 실린다", () =>
+            {
+                var store = new LocalFileSaveStore(Dir());
+                _now = 0;
+                var save = Coordinator(store);
+                save.BeginNewPlaythrough();
+
+                // 호스트는 자기 줄 번호를 센다. 진행은 그것이 줄 번호라는 것을 모른다.
+                int hostSerial = 0;
+
+                // 장면 1 — 줄 0·1·2, 간선 선택 하나
+                save.EnterScene("chapter", StateAt("ep-a", 1), hostSerial);
+                hostSerial += 3;
+                _now = 10;
+                save.CommitScene("chapter",
+                    new SceneCommitResult(StateAt("ep-b", 2), new[] { new CommittedChoice("ep-a", 1) }, Array.Empty<string>()),
+                    "host:scene-1", "host:lines-0-2", hostSerial, SceneRunOutcome.SceneEnded);
+
+                // 장면 2 — 줄 3·4, 간선 선택 둘
+                _now = 20;
+                save.EnterScene("chapter", StateAt("ep-b", 2), hostSerial);
+                hostSerial += 2;
+                _now = 30;
+                save.CommitScene("chapter",
+                    new SceneCommitResult(StateAt("ep-c", 3),
+                        new[] { new CommittedChoice("ep-b", 0), new CommittedChoice("ep-b2", 2) }, Array.Empty<string>()),
+                    "host:scene-2", "host:lines-0-4", hostSerial, SceneRunOutcome.SceneEnded);
+
+                // 장면 3 — 진행 중(확정 전). 줄 5
+                save.EnterScene("chapter", StateAt("ep-c", 3), hostSerial);
+                hostSerial += 1;
+
+                string source = save.PlaythroughId;
+                PlaythroughSaveSnapshot playthrough = save.Capture();
+                var forks = Forks(store);
+
+                // 1. 호스트가 자기 순번으로 장면을 찾는다.
+                Check(playthrough.FindSceneIndexBySerial(4) == 1, "줄 4가 장면 2로 읽히지 않는다");
+                Check(forks.CanForkFrom(playthrough, 4), "확정된 과거 장면에서 갈라지지 못한다");
+                Check(!forks.CanForkFrom(playthrough, 5), "진행 중 장면은 갈라질 지점이 아니다(되감기는 연출의 몫)");
+
+                // 2. 그 장면의 루트에서 새 회차로 갈라진다. 장면 안 어디까지 갈지는 호스트 상태로 싣는다.
+                forks.ForkFromScene(playthrough, 1, inheritedHostState: "host:lines-0-2", loadHostState: "host:to-line-4");
+
+                // 3. 이어하기가 받는 것 — 장면 2의 루트 상태 + 경로 + 호스트 상태.
+                var resumed = Coordinator(store);
+                ResumePoint resume = resumed.LoadActiveResumePoint();
+
+                Check(resumed.PlaythroughId != source, "같은 회차를 되감았다 — 확정된 과거는 분기해야 한다");
+                Check(resume.EpisodeId == "ep-b" && resume.Stats["score"] == 2, "장면 2의 루트 상태가 아니다");
+                Check(resume.HostState == "host:lines-0-2", "물려받은 호스트 상태가 실리지 않았다");
+                Check(resume.LoadPlan != null && resume.LoadPlan.HostState == "host:to-line-4", "재생 계획에 호스트 상태가 실리지 않았다");
+                Check(string.Join(" ", resume.LoadPlan.Path.Select(c => $"{c.FromEpisodeId}:{c.OptionIndex}")) == "ep-b:0 ep-b2:2",
+                    "재생 계획에 그 장면의 진행 경로가 실리지 않았다");
+
+                PlaythroughSave forked = store.LoadActive();
+                Check(forked.Scenes.Count == 1 && forked.Scenes[0].HostState == "host:scene-1", "장면 2 이전 기록만 물려받아야 한다");
+                Check(forked.PlaySeconds == 20, "플레이 시간이 장면 2 진입 시점으로 돌아가지 않았다");
+
+                // 4. 원래 회차는 그대로다.
+                PlaythroughSave original = store.LoadPlaythrough(source);
+                Check(original.Scenes.Count == 2 && original.HostState == "host:lines-0-4", "원래 회차가 바뀌었다");
+            });
 
             Test("호스트 순번은 확정된 장면에만 닿는다", () =>
             {
