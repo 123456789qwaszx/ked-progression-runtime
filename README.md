@@ -847,3 +847,4 @@ Tests/PlayMode   Ked.Progression.Tests.PlayMode
 ```
 
 호스트 `SceneRunner`의 테스트는 그 구현을 가진 `ked-presentation-runtime`이 소유한다.
+`tests/ProgressionHost`의 dotnet 하네스가 진짜 `SceneRunner`와 이 코어를 함께 컴파일해, 진행 순서·리플레이·롤백·로드·정지·저장 실패를 Unity 없이 검증한다.
