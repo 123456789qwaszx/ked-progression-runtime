@@ -1,0 +1,26 @@
+<!--
+  진행 저장 회귀 하네스.
+
+  Assets/Progression/Runtime 은 코어(Ked.Progression)와 저장(Ked.Progression.Save) 두 어셈블리로
+  이루어진 순수 C#이다. 둘 다 Unity 없이 그대로 컴파일한다.
+
+  저장 계층은 호스트(연출)의 상태를 문자열 한 칸(HostState)으로만 받는다.
+  여기서는 그 문자열에 아무 값이나 넣어 저장 정책만 검증한다 —
+  문자열의 안을 만들고 되읽는 일은 호스트 저장소의 하네스가 맡는다.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Include="../../Assets/Progression/Runtime/**/*.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

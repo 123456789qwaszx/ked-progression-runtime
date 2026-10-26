@@ -1,0 +1,16 @@
+{
+    "name": "Ked.Progression.Save",
+    "rootNamespace": "Ked.Progression.Save",
+    "references": [
+        "Ked.Progression"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

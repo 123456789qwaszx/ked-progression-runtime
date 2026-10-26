@@ -1,7 +1,8 @@
 # ked-progression-runtime
 
 `ked-progression-runtime`은 비주얼 노벨 진행 로직의 **판정 규칙과 상태 생명주기**를 담는 저장소다.
-엔진 참조가 없는 진행 코어(`Ked.Progression`)와, 그 코어만으로 챕터 하나를 끝까지 돌려 보는 최소 샘플이 들어 있다.
+엔진 참조가 없는 진행 코어(`Ked.Progression`)와 진행 저장(`Ked.Progression.Save`),
+그리고 코어만으로 챕터 하나를 끝까지 돌려 보는 최소 샘플이 들어 있다.
 
 실제 게임 호스트는 `ked-presentation-runtime`이다. 그 저장소는 이 코어를 `Assets/Scripts/Ked.Progression`에 복사해 쓰고,
 Scene 실행 순서(`ProgressionHost/SceneRunner`)와 재생·저장·백로그·롤백을 호스트 쪽에서 구현한다.
@@ -21,6 +22,7 @@ Scene 실행 순서(`ProgressionHost/SceneRunner`)와 재생·저장·백로그�
 ```text
 Assets/Progression/
 ├─ Runtime/   Ked.Progression           진행 코어 (noEngineReferences)
+│  └─ Save/   Ked.Progression.Save      진행 저장 (noEngineReferences, Newtonsoft)
 ├─ Samples/   Ked.Progression.Samples   Play하면 서는 최소 호스트
 └─ Tests/     EditMode(코어 규칙) · PlayMode(어셈블리 스모크)
 ```
@@ -830,7 +832,49 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 
 ---
 
-# 11. 검증
+# 11. 저장 — Ked.Progression.Save
+
+저장은 두 겹이다. 이 어셈블리는 **진행 겹**만 소유한다.
+
+```text
+진행 겹 (여기)                          연출 겹 (호스트)
+────────────────────────               ────────────────────────
+챕터 · 현재 Episode · 스탯              줄 위치(대사 좌표)
+완료 Scene 기록과 선택 경로              Yarn 선택 기록
+Scene 진입 checkpoint                   백로그
+재생 계획의 경로(ScenePathStep)
+수동 슬롯 · 갈라지기 · 원자적 파일 쓰기
+```
+
+연출 겹은 저장이 없어도 호스트가 늘 들고 있는 것이다. 진행 저장은 그것을 **`HostState` 문자열 한 칸**으로만 받고, 안을 보지 않는다.
+
+| 자리 | 호스트가 싣는 것(예: ked-presentation-runtime) |
+| --- | --- |
+| `PlaythroughSave.HostState` | 장면을 넘어 이어지는 상태 — 백로그 |
+| `SceneRecord.HostState` | 그 Scene을 다시 달릴 때 필요한 것 — Yarn 선택 기록 |
+| `SavedLoadPlan.HostState` | 저장 지점의 좌표와 거기까지 가는 데 필요한 것 — 줄 좌표 + Yarn 선택 |
+
+정수 하나는 진행 겹에 남는다. `SceneCheckpoint.HostSerialStart` / `SceneRecord.HostSerialEnd` — 호스트가 세는 단조 증가 순번의 Scene 경계다.
+"백로그 몇 번째 줄은 어느 완료 Scene의 것인가"를 진행 겹이 답하는 근거이고(`PlaythroughSaveSnapshot.FindSceneIndexBySerial`), 그것이 줄 번호라는 것은 모른다.
+
+| 타입 | 역할 |
+| --- | --- |
+| `SaveCoordinator` | 현재 회차의 저장 세션. Scene 진입 checkpoint, 재개 지점 갱신, Scene 확정 |
+| `SaveSlotService` | 수동 슬롯. 슬롯 본문은 원본 회차 없이 복원되는 독립 데이터 |
+| `PlaythroughForkService` | 확정된 과거 Scene이나 슬롯에서 새 회차를 만들고 active로 세움 |
+| `LocalFileSaveStore` · `PlaythroughSession` · `AtomicFile` | 파일 저장소. 사본에 적용 → 디스크 교체 성공 → 메모리 채택 |
+| `SaveDataValidator` | 읽기 경계 검사. 형식 버전이 다르면 거부한다 |
+| `LocalSaveMaintenance` | 참조가 끝난 회차 파일 정리 |
+
+엔진을 모른다. 플레이 시간은 생성자에 넣는 시계(`Func<double>`), 로그는 `IProgressionLog`로 받는다.
+JSON은 Newtonsoft(`com.unity.nuget.newtonsoft-json`)로 쓴다. 코어 `Ked.Progression`은 Newtonsoft를 모른다.
+
+연출 겹의 실제 구현은 `ked-presentation-runtime`의 `ProgressionHost/PresentationSaveState.cs`(코덱)와
+`ProgressionHost/ProgressionSaveBridge.cs`(Scene 경계에서 싣기)다.
+
+---
+
+# 12. 검증
 
 Unity Test Runner에서 실행한다.
 
@@ -844,6 +888,12 @@ Tests/EditMode   Ked.Progression.Tests.EditMode
 
 Tests/PlayMode   Ked.Progression.Tests.PlayMode
   ProgressionPlayModeSmokeTests   어셈블리 로드 확인
+```
+
+저장 정책은 dotnet 하네스로 Unity 없이 검증한다(세션·확정 실패·손상 거부·콘텐츠 버전·슬롯·갈라지기·정리, 24건).
+
+```bash
+dotnet run --project tests/ProgressionSave/ProgressionSave.csproj
 ```
 
 호스트 `SceneRunner`의 테스트는 그 구현을 가진 `ked-presentation-runtime`이 소유한다.
