@@ -1,5 +1,9 @@
 # Progression Runtime Production Adapter Map
 
+> **역반입 이전 기록이다.** 2026-10-26에 `ked-presentation-runtime` 사본의 진행 코어를 이 저장소로 다시 가져오면서
+> 이 문서가 말하는 구조(코어 안의 `SceneRunner`·`SceneRunContext`, `ProgressionState`, 디버그 호스트, 옛 Host 계약)는 사라졌다.
+> 당시의 판단 근거로만 남긴다. 현재 구조는 [`README.md`](./README.md)를 본다.
+
 이 문서는 `ked-progression-runtime`을 실제 Unity 프로젝트에 다시 연결할 때의 Host adapter 경계를 고정한다.
 
 비교 기준은 다음 하나로 고정한다.

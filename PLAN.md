@@ -1,5 +1,9 @@
 # Progression Runtime Plan
 
+> **역반입 이전 기록이다.** 2026-10-26에 `ked-presentation-runtime` 사본의 진행 코어를 이 저장소로 다시 가져오면서
+> 이 문서가 말하는 구조(코어 안의 `SceneRunner`·`SceneRunContext`, `ProgressionState`, 디버그 호스트, 옛 Host 계약)는 사라졌다.
+> 당시의 판단 근거로만 남긴다. 현재 구조는 [`README.md`](./README.md)를 본다.
+
 이 문서는 `ked-presentation-runtime/refactor/offline-local-save`를 behavioral reference로 삼아 `ked-progression-runtime/dev`의 Progression 의미와 경계를 검증 가능한 형태로 고정하기 위한 작업 계획이다.
 
 비교 기준:

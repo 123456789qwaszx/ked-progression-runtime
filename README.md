@@ -1,14 +1,30 @@
 # ked-progression-runtime
 
-`ked-progression-runtime`은 비주얼 노벨 진행 로직의 **판정 규칙과 생명주기 순서**를 소유하는 저장소다.
-Progression Core와 Runtime의 원본이 여기 있고, 실제 게임인 `ked-presentation-runtime`이 그 Host 구현을 제공한다.
+`ked-progression-runtime`은 비주얼 노벨 진행 로직의 **판정 규칙과 상태 생명주기**를 담는 저장소다.
+엔진 참조가 없는 진행 코어(`Ked.Progression`)와, 그 코어만으로 챕터 하나를 끝까지 돌려 보는 최소 샘플이 들어 있다.
 
-경계를 고정할 때의 behavioral reference는 `ked-presentation-runtime/refactor/offline-local-save`다.
-Reference를 그대로 복제하는 것이 목적이 아니라, **Reference가 명시한 Progression invariant를 순수한 Core/Runtime으로 보존하는 것**이 목적이다.
+실제 게임 호스트는 `ked-presentation-runtime`이다. 그 저장소는 이 코어를 `Assets/Scripts/Ked.Progression`에 복사해 쓰고,
+Scene 실행 순서(`ProgressionHost/SceneRunner`)와 재생·저장·백로그·롤백을 호스트 쪽에서 구현한다.
 
-> 진행 코어의 이전 원본이던 `ked-progression`은 더 이상 쓰지 않는다. 대조는 이 저장소를 기준으로 한다.
+> **2026-10-26 역반입.** `ked-presentation-runtime` 사본에서 발전한 코어를 이 저장소로 다시 가져왔다(`sync/from-presentation`).
+> 그 전 구조(코어 안의 `SceneRunner`·`SceneRunContext`, `ProgressionState`, 디버그 호스트)는 더 이상 없다. Scene 실행 순서는 이제 호스트가 `ISceneRunner`로 준다.
+> `PLAN.md`와 `ADAPTER_MAP.md`는 역반입 이전의 작업 기록이다.
 
----
+## 빠르게 보기
+
+1. Unity 6000.3.16f1로 이 프로젝트를 연다.
+2. 아무 씬(예: `Assets/Scenes/SampleScene.unity`)에서 Play를 누른다. 샘플이 스스로 설치되므로 씬에 놓을 것이 없다.
+3. 오른쪽의 [처음부터]를 누르고, [다음 ▶]과 선택지로 진행한다.
+
+샘플의 구성과 고치는 법은 [9. 샘플](#9-샘플)에 있다.
+
+```text
+Assets/Progression/
+├─ Runtime/   Ked.Progression           진행 코어 (noEngineReferences)
+├─ Samples/   Ked.Progression.Samples   Play하면 서는 최소 호스트
+└─ Tests/     EditMode(코어 규칙) · PlayMode(어셈블리 스모크)
+```
+
 # 1. Progression 계층
 
 Progression은 다음과 같은 수명 계층으로 나눈다.
@@ -49,6 +65,9 @@ Game은 계속 유지
 * **Chapter**: 하나의 진행 그래프를 실행하는 단위
 * **Scene**: 여러 Episode를 묶는 Commit / Replay 생명주기 단위
 * **Episode**: 실제로 실행되는 최소 진행 노드
+
+> 현재 코어가 구현하는 것은 Chapter · Scene · Episode다. Game · Scenario의 영구 데이터(업적, 앨범, 엔딩 기록)는 개념 경계로만 둔다.
+> `ScenarioDefinition`은 챕터를 묶는 자리만 있다.
 
 ---
 
@@ -132,7 +151,7 @@ Scenario
 반면 Scenario에만 속하는 상태는 다음 Playthrough에서 새로 만들어진다.
 
 -CurrentChapter
--ProgressionState
+-ChapterState
 -Backlog(Chapter가 바뀌어도 유지되는 정책)
 -회차 단위 상태
 ```
@@ -150,7 +169,7 @@ ChapterDefinition
 Episode graph
 Episode definitions
 Stat definitions
-현재 committed ProgressionState
+현재 확정된 ChapterState
 Chapter 전용 변수 초기화
 ```
 
@@ -160,7 +179,7 @@ Chapter가 시작되면 해당 Chapter의 그래프와 상태가 준비된다.
 
 ```text
 Chapter definition
-→ Initial ProgressionState
+→ Initial ChapterState   (ChapterDefinition.CreateEntryState)
 → Chapter Enter
 ```
 
@@ -168,7 +187,7 @@ Chapter definition
 
 ```text
 Chapter definition
-→ Restored ProgressionState
+→ Restored ChapterState  (ChapterState.Restore)
 → Chapter Enter
 ```
 
@@ -361,12 +380,12 @@ Episode Skip 역시 Episode playback을 빠르게 끝내는 Presentation 기능�
 ---
 
 
-# 계층별 책임 요약
+# 2. 계층별 책임 요약
 
 | 계층           | 의미                   | 주로 소유하는 것                                              | 종료/교체 시점                  |
 | ------------ | -------------------- | ------------------------------------------------------ | ------------------------- |
 | **Scenario** | 한 회차 전체              | Backlog, 영구 상태, 앨범, 엔딩, 현재 Chapter                     | 새 게임/타이틀 종료/회차 종료         |
-| **Chapter**  | 하나의 진행 그래프           | Episode graph, Stat 정의, committed ProgressionState     | 마지막 Scene 완료              |
+| **Chapter**  | 하나의 진행 그래프           | Episode graph, Stat 정의, committed ChapterState         | 마지막 Scene 완료              |
 | **Scene**    | Commit / Rollback 단위 | EntryState, pending choice, watched, replay/restore 상태 | 다른 Scene 이동 또는 Chapter 종료 |
 | **Episode**  | 최소 실행 노드             | DialogueEntryId, EventKey, 다음 간선                       | 현재 Episode playback 완료    |
 
@@ -407,7 +426,7 @@ Scenario
 
 
 
-## 2. 네 종류의 통로
+## 네 종류의 통로
 
 | 종류 | 예 | Scene Commit | Scene 교체 | 의미 |
 | --- | --- | ---: | ---: | --- |
@@ -422,7 +441,7 @@ Scenario
 
 ---
 
-## 3. 통로별 의미
+## 통로별 의미
 
 | 통로 | 현재 실행 | Chapter | Scene | Pending |
 | --- | --- | --- | --- | --- |
@@ -438,103 +457,63 @@ Scenario
 
 ---
 
+# 3. 코어와 호스트의 경계
 
-
-범용 게임 프레임워크를 만드는 것이 목적은 아니다. 대신 내부를 다음 세 층으로 분리한다.
+범용 게임 프레임워크를 만드는 것이 목적은 아니다. 대신 진행을 두 층으로 나눈다.
 
 ```text
-Progression Core
+Progression Core   (Ked.Progression, 엔진 참조 없음)
 ────────────────────────
 무엇이 유효한 진행/상태인가?
 
-Spec / State / Transition
-SceneProgress
-ScenePendingHistory
+Spec / State / Transition / Loading
+SceneProgress · ScenePendingHistory
+ProgressionDriver · SceneRunSession      ← Chapter 실행 경계
 
-        ↓
-
-Progression Runtime
-────────────────────────
-언제 무엇을 실행하는가?
-
-ProgressionDriver
-SceneRunner
-SceneRunContext
-
-        ↓
+        ↓  ISceneRunner
 
 Host
 ────────────────────────
-실제로 무엇으로 실행하는가?
+Scene 안에서 무엇을 어떤 순서로 실행하는가?
 
-Unity / Yarn / Stage / UI / Save
-Backlog / RollbackHistory
+Scene 실행 순서(ISceneRunner 구현)
+재생(Yarn / Stage / UI) · 선택 UI · 저장 · 백로그 · 롤백 기록
 ```
 
-실제 게임인 `ked-presentation-runtime`은 마지막 Host 구현을 제공한다.
+**Scene 실행 순서는 코어가 갖지 않는다.** 재생을 언제 멈추고, 리플레이를 어디서부터 하고, 언제 저장하는지는
+호스트의 자원(재생 엔진, 롤백 기록, 저장 형식)에 묶여 있기 때문이다.
+코어는 그 순서가 지켜야 할 규칙(`SceneProgress` API와 [10. 핵심 invariant](#10-핵심-invariant))을 주고, 호스트는 `ISceneRunner`로 순서를 준다.
 
-
-
----
-
-# 1. Core와 Runtime의 경계
-
-## Core
-
-Core는 순수한 진행 상태와 판정만 소유한다.
-
-주요 타입:
+## Core 타입
 
 ```text
-ChapterDefinition
-EpisodeNode
-EpisodeOption
-ProgressionState
-ChapterTransition
-ChapterAdvance
-ResolvedOption
-SceneProgress
-ScenePendingHistory
+Spec        ChapterDefinition, EpisodeNode, EpisodeOption, ScenarioDefinition, ChapterInvariants
+State       ChapterState, StatChange
+Transition  ChapterTransition, ChapterAdvance, ResolvedOption, ConditionEvaluator
+Loading     ProgressionLoader, ChapterProgressionDto 외 DTO, ProgressionDiagnostic
+Scene       SceneProgress, ScenePendingHistory(internal), SceneRunSession,
+            SceneChoice, SceneChoiceResult, SceneCommitResult, SceneRunResult, ScenePathStep
+실행 경계    ProgressionDriver, ISceneRunner
+Contracts   IChapterOptionsView, IScenePresentation, IScenePersistence, IProgressionLog
 ```
 
 Core가 답하는 질문은 다음과 같다.
 
 ```text
-현재 상태에서 어떤 선택지가 보이는가?
-어떤 선택지가 선택 가능한가?
+이 챕터 데이터는 구조적으로 유효한가?          (ProgressionLoader → 진단)
+현재 상태에서 어떤 선택지가 보이고, 어떤 것이 잠겼는가?
 이 선택을 적용하면 어떤 상태가 되는가?
 현재 Scene의 pending path는 무엇인가?
 rollback하면 어떤 pending이 사라지는가?
-restore path가 현재 Chapter graph와 맞는가?
-Scene을 commit하면 어떤 상태/선택/시청 기록이 확정되는가?
+저장된 경로를 Scene root부터 어떻게 다시 따라가는가?
+Scene을 commit하면 어떤 상태/선택/이벤트 기록이 확정되는가?
 ```
 
-Core에는 Unity/Yarn playback이나 `Task` 기반 Enter/Exit orchestration을 넣지 않는다.
-
-## Runtime
-
-Runtime은 Core 상태를 이용해 실제 실행 순서를 조립한다.
-
-```text
-ProgressionDriver
-    ↓
-SceneRunner
-    ↓
-SceneRunContext
-    ↓
-SceneProgress
-```
-
-- `ProgressionDriver`: Chapter 실행 수명과 전체 cancellation을 소유한다.
-- `SceneRunner`: Scene/Episode 실행 순서, 선택 대기, replay, commit 시점을 소유한다.
-- `SceneRunContext`: 실행 중인 Scene의 `ReplayPending`과 restore input을 소유한다.
-- `SceneProgress`: Scene 진행 데이터의 source of truth다.
-
-`ChapterSession`, `ProgressionBoundaries` 같은 별도의 두 번째 실행기는 유지하지 않는다.
+Core에는 Unity/Yarn 재생이나 JSON 파서를 넣지 않는다. JSON은 호스트가 DTO로 읽어 `ProgressionLoader.Load(dto)`에 넘긴다.
 
 ---
 
-# 2. SceneProgress와 SceneRunContext
+# 4. SceneProgress와 SceneRunSession
 
 ## SceneProgress
 
@@ -551,44 +530,60 @@ CurrentEpisodeId
 pending choices
 watched events
 recorded replay path
-WorkingState
+EffectiveState (= EntryState + 소비된 pending choices)
 ```
+
+호스트 runner가 쓰는 API:
+
+```text
+NoteCurrentEpisodeWatched(anchor)   현재 Episode 시청 기록
+RecordChoice(choice, anchor)        새로 정한 선택을 pending으로 기록
+AdvanceTo(episodeId)                실제 Episode 커서 이동
+RestorePath(path)                   저장 경로를 recorded choice로 적재
+TakeRecordedChoice(anchor)          리플레이·로드 중 기록된 선택을 다시 소비
+DiscardUnconsumedChoices()          소비하지 못한 기록 폐기
+RollbackTo(anchor)                  anchor 이후 pending 제거
+ResetForReplay()                    기록 커서와 Episode 커서를 root로
+CreateCommitResult()                정상 Scene 완료 시 확정 결과
+```
+
+`anchor`는 호스트의 롤백 기록 위치다. 코어는 그 뜻을 모르고 순서 있는 정수로만 다룬다.
 
 핵심 규칙:
 
 1. `EntryState`는 Scene commit 전까지 변하지 않는다.
-2. Scene 내부 선택은 `ScenePendingHistory`에 pending으로 기록한다.
-3. `WorkingState = EntryState + 현재 소비된 pending choices`다.
-4. Rollback은 pending 일부를 제거한 뒤 WorkingState를 다시 계산한다.
-5. Replay는 같은 Scene을 유지한 채 root cursor로 돌아간다.
+2. Scene 내부 선택은 `ScenePendingHistory`에 pending으로 기록한다. 이 클래스는 internal이라 runner는 `SceneProgress` API로만 바꾼다.
+3. `EffectiveState = EntryState + 현재 소비된 pending choices`다.
+4. Rollback은 pending 일부를 제거한 뒤 `EffectiveState`를 다시 계산한다.
+5. Replay는 같은 Scene을 유지한 채 root 커서로 돌아간다.
 6. 정상 Scene 완료에서만 `CreateCommitResult()`로 확정한다.
 
 Commit 결과는 `SceneCommitResult`로 투영한다.
 
 ```text
-State
-Choices
-WatchedEpisodeIds
+State               확정 ChapterState
+Choices             이 Scene에서 확정된 선택
+WatchedEpisodeIds   EventKey가 있는 시청 Episode만
 ```
 
-Core는 여기까지만 계산한다. Save/report 실행은 Runtime/Host 책임이다.
+Core는 여기까지만 계산한다. 저장·보고 실행은 호스트 책임이다.
 
-## SceneRunContext
+## SceneRunSession
 
-`SceneProgress`를 감싼 Runtime 상태다.
+실행 중인 Scene 하나를 감싼 실행 상태다. `ProgressionDriver`가 Scene마다 만들어 runner에 넘긴다.
 
 ```text
-SceneRunContext
+SceneRunSession
 ├─ SceneProgress Progress
-├─ bool ReplayPending
-└─ RestorePath
+├─ bool StartsFromRestore     저장 경로로 연 Scene인가
+└─ bool ReplayPending         TryRequestReplay / CompleteReplayRequest
 ```
 
 Chapter/EntryState/CurrentEpisode/PendingPath를 별도로 복제하지 않고 `SceneProgress`에 위임한다.
 
 ---
 
-# 3. 정상 생명주기
+# 5. 정상 생명주기
 
 ```text
 Chapter Enter
@@ -619,61 +614,85 @@ Chapter Exit
 - Rollback은 Scene을 종료하지 않는다.
 - Episode Skip은 Progression transition이 아니다.
 
+---
 
-# 6. Runtime 실행 의미
+# 6. 실행 경계
 
 ## ProgressionDriver
 
 Chapter 실행 경계다.
 
 ```text
-Start
-→ Chapter preparation
-→ Chapter Enter report
-→ SceneRunContext 반복 생성
-→ SceneRunner.RunAsync
-→ committed state를 다음 Scene EntryState로 전달
-→ 마지막 Scene 완료
-→ Chapter Exit report
+Start(chapter, entryState, restorePath?)
+→ SceneProgress(chapter, 현재 확정 상태)
+→ SceneRunSession.StartNew  또는  SceneRunSession.Restore(path)   (경로는 첫 Scene에만)
+→ ISceneRunner.RunAsync(session, token)
+→ SceneRunResult.ExitState를 다음 Scene의 EntryState로
+→ Outcome == ChapterEnded면 종료
 ```
 
-`StopAsync()`는 run cancellation을 소유한다.
+- `CurrentState`: 실행 중이면 현재 Scene의 `EffectiveState`를 준다. 간선 관문(`ChapterTransition`)이 보는 값과 같다.
+  Scene 사이면 마지막 확정 상태, 실행이 없으면 `null`이다. 대사가 스탯을 읽는 유일한 통로다.
+- `RequestReplayAsync()`: 현재 Session에 replay를 요청한다. 실제 처리는 runner가 한다.
+- `StopAsync()`: run cancellation을 소유한다.
 
 ```text
 cancel
-→ playback/choice wait 중단
+→ runner.StopAsync()와 실행 Task를 함께 기다린다
 → 현재 pending commit 금지
 → Scene Exit/Chapter Exit 금지
 ```
 
-## SceneRunner
+## ISceneRunner
 
-Scene/Episode 실행 순서를 담당한다.
+Scene 하나의 실행 순서다. **호스트가 구현한다.**
 
-```text
-Scene Enter
-→ restore path 적용
-→ Episode Enter
-→ node playback
-→ Episode Exit
-→ choice resolve
-→ optional Via playback
-→ target 이동
-→ same Scene continue / Scene commit
+```csharp
+public interface ISceneRunner
+{
+    Task<SceneRunResult> RunAsync(SceneRunSession session, CancellationToken cancellationToken);
+    Task RequestReplayAsync(SceneRunSession session);
+    Task StopAsync();
+}
 ```
 
-Runtime은 `ScenePendingHistory`를 직접 접근하지 않는다. 모든 진행 상태 변경은 `SceneProgress` API를 통한다.
+두 구현이 따르는 순서:
+
+```text
+Scene Enter                  (호스트 준비: 재생 정리, 백로그 경계, 저장 진입 기록)
+→ Episode 재생
+→ ReplayPending이면 replay
+→ NoteCurrentEpisodeWatched
+→ 선택 결정
+     리플레이·로드 중이고 기록이 있으면  TakeRecordedChoice
+     아니면 ChapterTransition.Resolve →  ChapterEnded / AutoAdvance(Options[0]) / 선택 UI
+→ 새로 정한 선택이면 RecordChoice
+→ AdvanceTo(target)
+→ 다른 Scene이면  CreateCommitResult → SceneRunResult(SceneEnded)
+  ChapterEnded면   CreateCommitResult → SceneRunResult(ChapterEnded)
+  아니면 같은 Scene에서 계속
+```
+
+| 구현 | 위치 | 범위 |
+| --- | --- | --- |
+| `SampleSceneRunner` | 이 저장소 `Assets/Progression/Samples` | 재생·선택·commit만. 리플레이 요청은 무시하고, 복원 시작은 지원하지 않는다(예외). |
+| `SceneRunner` | `ked-presentation-runtime` `Assets/Scripts/ProgressionHost/SceneRunner.cs` | Yarn 재생, 롤백/백로그 점프 리플레이, 로드 시 기록된 선택 소비(seek), Scene 경계 저장, 백로그 경계 |
 
 ## Replay
 
+`ked-presentation-runtime`의 `SceneRunner` 기준:
+
 ```text
-Replay request
-→ current playback/choice wait interrupt
-→ presentation replay prepare
-→ rollback target 이후 pending 제거
-→ recorded path cursor reset
-→ Scene root cursor reset
-→ 같은 Scene root Episode 재생
+RequestReplayAsync(session)
+→ session.TryRequestReplay()        이미 요청 중이면 무시
+→ 재생 정지 + 선택 UI 취소
+→ RunAsync 루프가 Replay 단계를 만난다
+→ 재생 정지 완료를 기다림
+→ presentation.PrepareReplay()
+→ 롤백 표적이 있으면 RollbackTo(anchor)
+→ ResetForReplay()
+→ CompleteReplayRequest()
+→ 같은 Scene root Episode부터 재생, 기록된 선택은 TakeRecordedChoice로 소비
 ```
 
 Replay 때문에 다음이 발생하면 안 된다.
@@ -689,9 +708,7 @@ Chapter Exit
 
 # 7. Restore Path
 
-Progression Runtime은 저장 전체 포맷을 소유하지 않는다.
-
-Progression에 필요한 최소 좌표만 사용한다.
+진행 코어는 저장 전체 포맷을 소유하지 않는다. 필요한 최소 좌표만 받는다.
 
 ```csharp
 public readonly struct ScenePathStep
@@ -701,81 +718,95 @@ public readonly struct ScenePathStep
 }
 ```
 
-`SceneProgress.TryRestorePath()`는 Scene root부터 다음을 검증한다.
+`ProgressionDriver.Start(chapter, state, restorePath)`에 경로를 주면 첫 Scene을 `SceneRunSession.Restore`로 연다.
+`SceneProgress.RestorePath()`는 Scene root부터 `OptionIndex`를 따라가며 선택을 recorded choice로 적재하고, 커서를 root로 되돌린다.
+그 뒤 runner가 재생하면서 `TakeRecordedChoice()`로 그 선택을 다시 소비한다.
 
-```text
-FromEpisodeId == cursor
-Episode 존재
-OptionIndex 범위
-→ recorded choice 적재
-→ cursor = target
-```
-
-하나라도 실패하면 부분 복원을 남기지 않고 path 전체를 버린 뒤 Scene root로 fallback한다.
-
-`YarnChoices`, `SaveLineTarget`, line seek는 Host/Presentation 책임이다.
+- 경로가 현재 그래프와 맞지 않으면(없는 Episode, 범위를 벗어난 `OptionIndex`) 예외로 실패하고 그 실행은 진행하지 않는다.
+  일부만 복원한 채로 이어 가지 않는다.
+- 복원은 root와 `OptionIndex`만으로 경로를 따라간다. `FromEpisodeId`는 저장 데이터 쪽 확인용 좌표다.
+- 저장 형식 검증, `YarnChoices`, 저장한 줄 위치(line seek)는 호스트 책임이다.
 
 ---
 
-# 8. Host contract
+# 8. 계약
 
-현재 Runtime은 실제 구현 대신 필요한 능력만 받는다.
-
-```text
-IChapterLifecycle
-IChapterOptionsView
-IScenePlayback
-ISceneReplayState
-IRollbackHistory
-ISceneBacklog
-IProgressionReporter
-IProgressionLog
-```
-
-예상되는 실제 게임 mapping:
+`ProgressionDriver`가 직접 받는 것은 둘이다.
 
 ```text
-IScenePlayback      → ScenePlaybackSession / Yarn node execution
-IChapterOptionsView → Choice UI
-ISceneReplayState   → saved Yarn choice + line seek 상태
-IRollbackHistory    → RollbackHistory
-ISceneBacklog       → Backlog Scene boundary marker
-IChapterLifecycle   → Chapter Yarn variable initialization
-IProgressionReporter→ lifecycle 관찰 + 이후 save/report adapter
+ISceneRunner      Scene 하나를 실행하고 SceneRunResult를 돌려준다
+IProgressionLog   [RUN] · [REPLAY] 기록 (생략 가능)
 ```
 
-Host implementation은 progression lifecycle을 결정하지 않는다.
+`Contracts/`의 나머지 셋은 runner 구현이 쓰는 공용 어휘다. 드라이버는 이것들을 모른다.
+
+```text
+IChapterOptionsView   선택지 표시     ShowAsync(options, hiddenCount) → 고른 인덱스 / Cancel()
+IScenePresentation    Episode 재생    BeginScene / PlayEpisodeAsync(nodeName) / PrepareReplay / StopAsync
+IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / CommitScene(chapterId, result, outcome)
+```
+
+`ked-presentation-runtime`의 구현:
+
+| 계약 | 구현 (`Assets/Scripts/`) |
+| --- | --- |
+| `ISceneRunner` | `ProgressionHost/SceneRunner` |
+| `IScenePresentation` | `ProgressionHost/ScenePresentationProgressionAdapter` → `Game/ScenePresentation` (Yarn 노드 재생) |
+| `IChapterOptionsView` | `ProgressionHost/ChapterOptionsView` |
+| `IScenePersistence` | `ProgressionHost/ProgressionSaveBridge` |
+| `IProgressionLog` | `ProgressionHost/UnityProgressionLog` |
+
+롤백 기록, 백로그, 리플레이 상태(seek)는 계약이 아니라 호스트 runner의 내부 협력자다.
+
+호스트는 순서를 조립할 뿐 무엇이 유효한 진행인지는 정하지 않는다.
+보이는 선택지, 잠김, 스탯 적용, commit 내용은 코어가 계산한다.
 
 ---
 
-# 9. Debug Host
+# 9. 샘플
 
-`Assets/Progression/Debug/ProgressionDebugHost.cs`는 실제 Presentation을 연결하기 전에 Runtime lifecycle을 직접 확인하기 위한 Unity 호스트다.
+`Assets/Progression/Samples`(어셈블리 `Ked.Progression.Samples`)는 진행 코어만으로 챕터 하나를 끝까지 돌려 보는 최소 호스트다.
+`RuntimeInitializeOnLoadMethod`로 Play 시작 때 스스로 설치된다.
 
-Play Mode에서 다음 통로를 버튼으로 실행한다.
+화면 왼쪽에는 장면 이름·대사·[다음 ▶]이, 오른쪽에는 [처음부터]·스탯·선택지·진행 기록이 있다.
+진행 기록에는 드라이버의 `[RUN]` 기록과 Scene 진입·commit 결과가 함께 남는다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `ProgressionSampleBootstrap` | 조립 지점. JSON → `ProgressionLoader.Load` → `ProgressionDriver`. `IProgressionLog` 구현 |
+| `SampleSceneRunner` | `ISceneRunner` 최소 구현 |
+| `ProgressionSampleView` | 코드로 만드는 uGUI. `ISampleScreen`, `IChapterOptionsView` 구현 |
+| `ISampleScreen` | 샘플 화면 계약 (Episode 재생, Scene 진입·commit 표시) |
+| `SampleScript` | `# 키` 형식 대본 파서. 실제 게임에서는 Yarn이 맡는 자리다 |
+| `Resources/ProgressionSample/sample_chapter.json` | 챕터 그래프 |
+| `Resources/ProgressionSample/sample_script.txt` | 대사 |
+
+샘플 챕터 "던전 입구"는 세 갈래로 끝난다.
 
 ```text
-New Game
-Continue
-Manual Load
-Stop / Title Exit
-Complete Episode Node
-Rollback
-Backlog Jump
-Episode Skip
+[입구]   EP_GATE ─┬─ 정면으로 들어간다   (용기 +2) ─────────┐
+                  └─ 주변을 먼저 살핀다  (통찰 +2, 열쇠) ──┤
+                                                        ▼
+         EP_FORK (갈림길)
+           ├─ 깊은 길로   [용기 ≥ 2, 아니면 잠김]  → [깊은 곳] EP_DEPTH ─자동→ EP_FLOOR   이벤트 reached_first_floor
+           ├─ 옆문을 연다 [열쇠가 있을 때만 보임]  → [보관실]   EP_VAULT  이벤트 found_old_map → [끝] EP_END
+           └─ 돌아간다                          → [귀환]     EP_RETURN
 ```
 
-Console 태그:
+길마다 보이는 것:
 
-```text
-[LIFE]     Chapter / Scene / Episode
-[RUN]      run start / stop / cancellation
-[REPLAY]   rollback / backlog jump
-[PRESENT]  playback / choice / skip
-[STATE]    Scene commit 결과
-```
+- **정면** → 깊은 길이 열리고 옆문은 숨는다(숨겨진 선택지 수 표시). 깊은 곳 안에서 자동 간선으로 바닥까지 간다.
+- **살핌** → 깊은 길은 잠긴 사유와 함께 보이고, 옆문이 나타난다. 보관실을 나가는 길은 묻는 선택지다.
+- **돌아간다** → 다음 간선이 없는 Episode에서 챕터가 끝난다.
+- 어느 길이든 Scene 경계를 넘을 때마다 앞 Scene의 commit 결과(선택 수, 이벤트 Episode, 다음 시작점)가 진행 기록에 남고 스탯 칸이 갱신된다.
 
-상세 검증 순서는 [`DEBUG_LIFECYCLE.md`](./DEBUG_LIFECYCLE.md)를 따른다.
+고치는 법:
+
+- 대사: `sample_script.txt`에서 `# 키` 아래 줄을 고친다. 키는 Episode의 `DialogueEntryId`다.
+- 그래프: `sample_chapter.json`을 고친다. 데이터가 불변식을 어기면 Play 시 콘솔에 진단이 뜨고 샘플은 시작하지 않는다.
+- 실행 순서: `SampleSceneRunner`를 고치거나 새 `ISceneRunner`를 만들어 `ProgressionDriver`에 넘긴다.
+
+리플레이·롤백·저장 복원은 샘플 범위 밖이다. 그 구현은 `ked-presentation-runtime`의 `SceneRunner`를 본다.
 
 ---
 
@@ -790,29 +821,29 @@ Console 태그:
 7. Stop/New Game/Manual Load의 기존 run은 Scene을 commit하지 않는다.
 8. stale/cancel된 실행 결과는 commit/report/다음 Scene 진입을 만들면 안 된다.
 9. Episode Skip은 progression cursor를 직접 변경하지 않는다.
-10. `SceneProgress`는 순수 상태 규칙, `SceneRunner`는 실행 순서를 소유한다.
+10. `SceneProgress`는 순수 상태 규칙을, 호스트의 `ISceneRunner` 구현은 실행 순서를 소유한다.
+11. Scene에 밖에서 들어오는 자리는 root 하나다. 롤백과 이어하기가 돌아가는 곳이 그 root다.
+12. 자동 간선은 유일하고, 조건과 스탯 변화가 없고, 같은 Scene 안에 있다. Scene 경계는 항상 묻는 선택지다.
+13. `SceneCommitResult.WatchedEpisodeIds`에는 `EventKey`가 있는 Episode만 오른다.
+
+11과 12는 `ChapterInvariants`가 로드 시점에 검사한다. 어기면 `ProgressionLoader.Load`가 진단과 함께 실패한다.
 
 ---
 
-# 11. 개발 체크포인트
+# 11. 검증
 
-각 작업 후 다음 순서로 검증한다.
+Unity Test Runner에서 실행한다.
 
 ```text
-Reference
-→ Reference인 ked-presentation-runtime은 어떻게 동작하는가?
+Tests/EditMode   Ked.Progression.Tests.EditMode
+  AutoEdgeTests              자동 간선 규칙
+  SceneBoundaryTests         Scene 경계와 착지점 규칙
+  SceneProgressTests         pending·롤백·리플레이·경로 복원·commit
+  ProgressionStateFoldTests  선택 적용과 스탯 범위
+  ScenePendingHistoryTests   (현재 주석 처리됨)
 
-Implemented
-→ progression-runtime에 무엇을 반영했는가?
-
-Parity
-→ lifecycle 의미가 일치하는가?
-
-Gap
-→ 아직 Host/Yarn/Save에 남아 있는 것은 무엇인가?
-
-Plan Update
-→ 다음 작업 순서를 어떻게 바꿀 것인가?
+Tests/PlayMode   Ked.Progression.Tests.PlayMode
+  ProgressionPlayModeSmokeTests   어셈블리 로드 확인
 ```
 
-상세 작업 상태는 [`PLAN.md`](./PLAN.md)를 따른다.
+호스트 `SceneRunner`의 테스트는 그 구현을 가진 `ked-presentation-runtime`이 소유한다.
