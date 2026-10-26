@@ -753,7 +753,7 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 | 계약 | 구현 (`Assets/Scripts/`) |
 | --- | --- |
 | `ISceneRunner` | `ProgressionHost/SceneRunner` |
-| `IScenePresentation` | 쓰지 않는다. 재생 단위의 수명(열기·정지·루트부터 다시 달리기)을 연출 쪽 `Playback/PlaybackUnit`이 소유하고, `SceneRunner`가 그것을 부른다 |
+| `IScenePresentation` | 쓰지 않는다. 재생 단위의 수명(열기·정지·루트부터 다시 달리기)을 연출 쪽 어셈블리 `Ked.Presentation.Playback`의 `PlaybackUnit`이 소유하고, `SceneRunner`가 그것을 부른다 |
 | `IChapterOptionsView` | `ProgressionHost/ChapterOptionsView` |
 | `IScenePersistence` | `ProgressionHost/ProgressionSaveBridge` |
 | `IProgressionLog` | `ProgressionHost/UnityProgressionLog` |
@@ -914,7 +914,7 @@ Scene 진입 checkpoint                   백로그
 엔진을 모른다. 플레이 시간은 생성자에 넣는 시계(`Func<double>`), 로그는 `IProgressionLog`로 받는다.
 JSON은 Newtonsoft(`com.unity.nuget.newtonsoft-json`)로 쓴다. 코어 `Ked.Progression`은 Newtonsoft를 모른다.
 
-연출 겹의 실제 구현은 `ked-presentation-runtime`의 `ProgressionHost/PresentationSaveState.cs`(코덱)와
+연출 겹의 실제 구현은 `ked-presentation-runtime`의 `Ked.Presentation.Playback/Memory/PresentationMemory.cs`(연출 기억 코덱 — 진행을 모른다)와
 `ProgressionHost/ProgressionSaveBridge.cs`(Scene 경계에서 싣기)다.
 
 ---
