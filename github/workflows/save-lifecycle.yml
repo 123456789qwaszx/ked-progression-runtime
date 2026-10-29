@@ -1,0 +1,31 @@
+name: Save lifecycle
+on:
+  push:
+    branches: [dev, main, saveCoordinator, server_DB_Test, learning/vn-play-analytics, refactor/offline-local-save]
+  pull_request:
+    paths:
+      - 'Assets/Scripts/Ked.Progression/**'
+      - 'Assets/Scripts/Ked.Presentation.Playback/**'
+      - 'Assets/Scripts/Game/**'
+      - 'Assets/Scripts/UI/**'
+      - 'Assets/Scripts/ProgressionHost/**'
+      - 'tests/SaveLifecycle/**'
+      - '.github/workflows/save-lifecycle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  save-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            Assets/Scripts
+            tests/SaveLifecycle
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Run save lifecycle regression harness
+        run: dotnet run --project tests/SaveLifecycle/SaveLifecycle.csproj --configuration Release
