@@ -20,9 +20,9 @@ Scene 실행 순서(`ProgressionHost/SceneRunner`)와 재생·저장·백로그�
 샘플의 구성과 고치는 법은 [9. 샘플](#9-샘플)에 있다.
 
 ```text
-Assets/Progression/
-├─ Runtime/   Ked.Progression           진행 코어 (noEngineReferences)
-│  └─ Save/   Ked.Progression.Save      진행 저장 (noEngineReferences, Newtonsoft)
+Assets/Ked.Progression/      폴더 하나에 어셈블리 하나 (모듈 README.md)
+├─ Core/      Ked.Progression           진행 코어 (noEngineReferences) — 장면 실행은 Core/SceneRun/
+├─ Save/      Ked.Progression.Save      진행 저장 (noEngineReferences, Newtonsoft)
 ├─ Samples/   Ked.Progression.Samples   Play하면 서는 최소 호스트
 └─ Tests/     EditMode(코어 규칙) · PlayMode(어셈블리 스모크)
 ```
@@ -677,7 +677,7 @@ Scene Enter                  (호스트 준비: 재생 정리, 백로그 경계,
 
 | 구현 | 위치 | 범위 |
 | --- | --- | --- |
-| `SampleSceneRunner` | 이 저장소 `Assets/Progression/Samples` | 재생·선택·commit, Scene 경계 저장, 복원 시작(루트부터 표적 줄까지 빨리 감기). 장면 안 리플레이(롤백)는 없다. |
+| `SampleSceneRunner` | 이 저장소 `Assets/Ked.Progression/Samples` | 재생·선택·commit, Scene 경계 저장, 복원 시작(루트부터 표적 줄까지 빨리 감기). 장면 안 리플레이(롤백)는 없다. |
 | `SceneRunner` | `ked-presentation-runtime` `Assets/Scripts/ProgressionHost/SceneRunner.cs` | Yarn 재생, 롤백/백로그 점프 리플레이, 로드 시 기록된 선택 소비(seek), Scene 경계 저장, 백로그 경계 |
 
 ## Replay
@@ -767,7 +767,7 @@ IScenePersistence     Scene 경계 저장  EnterScene(chapterId, entryState) / C
 
 # 9. 샘플
 
-`Assets/Progression/Samples`(어셈블리 `Ked.Progression.Samples`)는 진행 코어와 진행 저장만으로 챕터 하나를 돌려 보는 작은 호스트다.
+`Assets/Ked.Progression/Samples`(어셈블리 `Ked.Progression.Samples`)는 진행 코어와 진행 저장만으로 챕터 하나를 돌려 보는 작은 호스트다.
 `RuntimeInitializeOnLoadMethod`로 Play 시작 때 스스로 설치된다.
 저장 파일은 `Application.persistentDataPath/ked-progression-sample/`에 쌓인다(진행 기록 첫 줄에 경로가 찍힌다).
 

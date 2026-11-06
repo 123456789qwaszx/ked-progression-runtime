@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Ked.Progression;
 using NUnit.Framework;
 
-// 장면 경계의 데이터 규칙 — G1.
+// 장면 경계의 데이터 규칙.
 //
 // 검사는 ChapterInvariants가 하지만 그것은 internal이라, 여기서는 로더라는
 // 공개 입구로만 두드린다. 호스트가 실제로 지나는 길과 같은 길이다.

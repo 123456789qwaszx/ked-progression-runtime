@@ -1,7 +1,7 @@
 <!--
   진행 저장 회귀 하네스.
 
-  Assets/Progression/Runtime 은 코어(Ked.Progression)와 저장(Ked.Progression.Save) 두 어셈블리로
+  Assets/Ked.Progression 의 Core/ 와 Save/ 는 코어(Ked.Progression)와 저장(Ked.Progression.Save) 두 어셈블리로
   이루어진 순수 C#이다. 둘 다 Unity 없이 그대로 컴파일한다.
 
   저장 계층은 호스트(연출)의 상태를 문자열 한 칸(HostState)으로만 받는다.
@@ -20,7 +20,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <Compile Include="../../Assets/Progression/Runtime/**/*.cs" />
+    <Compile Include="../../Assets/Ked.Progression/Core/**/*.cs" />
+    <Compile Include="../../Assets/Ked.Progression/Save/**/*.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 </Project>

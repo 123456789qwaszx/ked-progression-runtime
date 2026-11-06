@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Ked.Progression;
 using NUnit.Framework;
 
-// 커밋 유예의 코어 — G3. Fold는 Commit의 합성이다.
+// 커밋 유예의 코어. Fold는 Commit의 합성이다.
 public sealed class ProgressionStateFoldTests
 {
     [Test]
